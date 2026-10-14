@@ -57,6 +57,13 @@
 
           packages.default = ew2mqtt;
 
+          checks = {
+            package = ew2mqtt;
+          }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            nixos = import ./nix/nixos-test.nix { inherit pkgs ew2mqtt; };
+          };
+
           devShells.default = pkgs.mkShellNoCC {
             inherit propagatedBuildInputs;
 
