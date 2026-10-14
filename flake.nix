@@ -59,6 +59,8 @@
 
           checks = {
             package = ew2mqtt;
+
+            treefmt = treefmt.check ./.;
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             nixos = import ./nix/nixos-test.nix { inherit pkgs ew2mqtt; };
