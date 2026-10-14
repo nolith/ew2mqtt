@@ -28,5 +28,5 @@ jobs:
           extra_nix_config: |
             system-features = nixos-test benchmark big-parallel kvm
 
-      - name: Build the package and run the NixOS VM test
+      - name: Check formatting, build the package, run the NixOS VM test
         run: nix flake check -L
