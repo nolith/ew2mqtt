@@ -1,5 +1,6 @@
 import asyncio
 
+
 class RepeatingTimer:
     def __init__(self, callback):
         self.callback = callback
@@ -13,7 +14,7 @@ class RepeatingTimer:
             if self.is_running:  # Check again in case it was stopped
                 await self.callback()
 
-    def start(self,interval=None):
+    def start(self, interval=None):
         if not self.is_running:
             self.is_running = True
             if interval:
