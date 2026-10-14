@@ -68,6 +68,9 @@ class EasyWallbox:
 
     WRITE_ATTEMPTS = 3
     WRITE_RETRY_DELAY_SEC = 1
+    # bleak's own connect timeout, scan included; must leave time for
+    # pairing and login within CONNECT_TIMEOUT_SEC
+    BLEAK_CONNECT_TIMEOUT_SEC = 10
     CONNECT_TIMEOUT_SEC = 30
     AUTH_TIMEOUT_SEC = 20
     # Unanswered poll intervals before a silent link is considered dead
@@ -81,7 +84,8 @@ class EasyWallbox:
 
     def __init__(self, queue, mqtt_client):
         self._client = BleakClient(self.WALLBOX_ADDRESS,
-                                   disconnected_callback=self._on_disconnected)
+                                   disconnected_callback=self._on_disconnected,
+                                   timeout=self.BLEAK_CONNECT_TIMEOUT_SEC)
         self._queue = queue
         self._lock = asyncio.Lock()
         self._state_lock = asyncio.Lock()
