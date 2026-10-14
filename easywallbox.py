@@ -35,8 +35,14 @@ EVCC_STATUS_AVAILABLE = "A"
 EVCC_STATUS_VEHICLE_PRESENT = "B"
 EVCC_STATUS_CHARGING = "C"
 EVCC_STATUS_ERROR = "D"
+EVCC_ENABLED = f"{TOPIC}/evcc/enabled"
 
 settings = settings.Settings()
+
+def mqtt_bool(value):
+    # paho would publish a bool as "True"/"False"; evcc reads both, but the
+    # bridge publishes and accepts lowercase
+    return "true" if value else "false"
 
 # Failures of a single BLE operation that leave the process healthy: they are
 # retried or recovered by reconnecting, never fatal.
@@ -487,7 +493,7 @@ async def main():
                     else:
                         log.warn(f"Unknown EVCC status: {status_code}")
                     await client.publish(f"{TOPIC}/evcc/status", evcc_status, qos=0, retain=False)
-                    await client.publish(f"{TOPIC}/evcc/enabled", eb.is_evcc_enabled(), qos=0, retain=False)
+                    await client.publish(EVCC_ENABLED, mqtt_bool(eb.is_evcc_enabled()), qos=0, retain=False)
                     continue
                 elif topic == EVCC_COMMAND_ENABLE:
                     await eb.evcc_enable(message == "true")
@@ -545,7 +551,7 @@ async def main():
         eb = EasyWallbox(queue, client)
 
         await client.publish(f"{TOPIC}/status/general", "online", qos=1)
-        await client.publish(f"{TOPIC}/evcc/enabled", "false", qos=1)
+        await client.publish(EVCC_ENABLED, mqtt_bool(False), qos=1)
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -607,7 +613,7 @@ async def shutdown(client, eb):
         log.warning("BLE shutdown failed", exc_info=True)
     try:
         await client.publish(f"{TOPIC}/status/general", "offline", qos=1)
-        await client.publish(f"{TOPIC}/evcc/enabled", "false", qos=1)
+        await client.publish(EVCC_ENABLED, mqtt_bool(False), qos=1)
     except aiomqtt.MqttError as e:
         log.warning("Could not publish offline status: %s", e)
 

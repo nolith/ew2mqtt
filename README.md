@@ -161,15 +161,15 @@ In the tables below `easywallbox` is the default `WALLBOX_TOPIC`.
 
 ### Published by the bridge
 
-| Topic                        | Payload                                                                                   |
-|------------------------------|-------------------------------------------------------------------------------------------|
-| `easywallbox/status/general` | `online`, or `offline` on shutdown and as the MQTT last will                              |
-| `easywallbox/status/ble`     | `disconnected`, `connecting`, `connected`, `paired`, `authenticated`, `terminating`       |
-| `easywallbox/message`        | Every raw response line from the wallbox                                                  |
-| `easywallbox/ble/<key>/<n>`  | Field `n` of a `<key>` response, for example `easywallbox/ble/AD/4`                       |
-| `easywallbox/ble/<key>/<id>` | For `AL`, `SL` and `IDX` responses: the remaining fields, comma separated                 |
-| `easywallbox/evcc/status`    | evcc charging state `A`, `B`, `C` or `D`, see below                                       |
-| `easywallbox/evcc/enabled`   | Whether evcc controls the charge: `false` at startup and shutdown, else `True` or `False` |
+| Topic                        | Payload                                                                                  |
+|------------------------------|------------------------------------------------------------------------------------------|
+| `easywallbox/status/general` | `online`, or `offline` on shutdown and as the MQTT last will                             |
+| `easywallbox/status/ble`     | `disconnected`, `connecting`, `connected`, `paired`, `authenticated`, `terminating`      |
+| `easywallbox/message`        | Every raw response line from the wallbox                                                 |
+| `easywallbox/ble/<key>/<n>`  | Field `n` of a `<key>` response, for example `easywallbox/ble/AD/4`                      |
+| `easywallbox/ble/<key>/<id>` | For `AL`, `SL` and `IDX` responses: the remaining fields, comma separated                |
+| `easywallbox/evcc/status`    | evcc charging state `A`, `B`, `C` or `D`, see below                                      |
+| `easywallbox/evcc/enabled`   | Whether evcc controls the charge: `true` or `false`, and `false` at startup and shutdown |
 
 Responses are split on commas: in `$DATA,READ,AD,...` the key is `AD` and the
 fields after it are numbered from 0. The last field keeps the trailing
