@@ -20,7 +20,7 @@ nix develop
 # Build the package
 nix build
 
-# Format Nix files
+# Format Nix and Python files (treefmt, configured in treefmt.toml)
 nix fmt
 ```
 

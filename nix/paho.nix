@@ -25,7 +25,8 @@ buildPythonPackage rec {
   nativeCheckInputs = [
     pytestCheckHook
     six
-  ] ++ lib.optionals (!isPy3k) [ mock ];
+  ]
+  ++ lib.optionals (!isPy3k) [ mock ];
 
   doCheck = !stdenv.hostPlatform.isDarwin;
 
