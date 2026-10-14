@@ -37,7 +37,7 @@ from bleak import BleakClient
 
 logger = logging.getLogger(__name__)
 
-ADDRESS="8C:F6:81:AD:B8:3E"
+ADDRESS = "8C:F6:81:AD:B8:3E"
 
 
 async def main(address):

@@ -3,6 +3,7 @@
 Every call is a no-op when NOTIFY_SOCKET is unset, so the bridge runs
 unchanged outside systemd.
 """
+
 import logging
 import os
 import socket

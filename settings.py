@@ -1,5 +1,6 @@
 import asyncio
 
+
 class Settings:
     KEY_BLE_RETRY_INTERVAL = "ble_retry_interval"
     KEY_BLE_REFRESH_INTERVAL = "ble_refresh_interval"
@@ -20,7 +21,4 @@ class Settings:
             self._dict[key] = value
 
     async def keys(self):
-        return [
-            self.KEY_BLE_RETRY_INTERVAL,
-            self.KEY_BLE_REFRESH_INTERVAL
-        ]
+        return [self.KEY_BLE_RETRY_INTERVAL, self.KEY_BLE_REFRESH_INTERVAL]

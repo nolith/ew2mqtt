@@ -16,14 +16,16 @@ from repeating_timer import RepeatingTimer
 from blemap import WALLBOX_EPROM as eeprom
 import blemap
 
-FORMAT = ('%(asctime)-15s %(threadName)-15s '
-          '%(levelname)-8s %(module)-15s:%(lineno)-8s %(message)s')
+FORMAT = (
+    "%(asctime)-15s %(threadName)-15s "
+    "%(levelname)-8s %(module)-15s:%(lineno)-8s %(message)s"
+)
 logging.basicConfig(format=FORMAT)
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-TOPIC = os.getenv('WALLBOX_TOPIC', 'easywallbox')
-HOME_ASSISTANT_DISCOVERY = os.getenv('HOME_ASSISTANT_DISCOVERY', 'homeassistant')
+TOPIC = os.getenv("WALLBOX_TOPIC", "easywallbox")
+HOME_ASSISTANT_DISCOVERY = os.getenv("HOME_ASSISTANT_DISCOVERY", "homeassistant")
 
 SETTINGS_TOPIC_PREFIX = f"{TOPIC}/settings/"
 COMMAND_TOPICS = {f"{TOPIC}/{name}": cmds for name, cmds in mqttmap.MQTT2BLE.items()}
@@ -39,33 +41,34 @@ EVCC_ENABLED = f"{TOPIC}/evcc/enabled"
 
 settings = settings.Settings()
 
+
 def mqtt_bool(value):
     # paho would publish a bool as "True"/"False"; evcc reads both, but the
     # bridge publishes and accepts lowercase
     return "true" if value else "false"
+
 
 # Failures of a single BLE operation that leave the process healthy: they are
 # retried or recovered by reconnecting, never fatal.
 BLE_ERRORS = (BleakError, asyncio.TimeoutError, OSError, EOFError)
 SHUTDOWN_TIMEOUT_SEC = 10
 
+
 class EasyWallbox:
-    WALLBOX_ADDRESS = os.getenv('WALLBOX_ADDRESS', 'demo')
-    WALLBOX_PIN = os.getenv('WALLBOX_PIN', '9844')
+    WALLBOX_ADDRESS = os.getenv("WALLBOX_ADDRESS", "demo")
+    WALLBOX_PIN = os.getenv("WALLBOX_PIN", "9844")
 
-    WALLBOX_RX = "a9da6040-0823-4995-94ec-9ce41ca28833";
-    WALLBOX_SERVICE = "331a36f5-2459-45ea-9d95-6142f0c4b307";
-    WALLBOX_ST = "75A9F022-AF03-4E41-B4BC-9DE90A47D50B";
-    WALLBOX_TX = "a73e9a10-628f-4494-a099-12efaf72258f";
-    WALLBOX_UUID ="0A8C44F5-F80D-8141-6618-2564F1881650";
-
-    BLE_STATE_DISCONNECTED =    "disconnected";
-    BLE_STATE_CONNECTING =       "connecting";
-    BLE_STATE_CONNECTED =        "connected";
-    BLE_STATE_CONNECTED_PAIRED =   "paired";
-    BLE_STATE_CONNECTED_AUTH =   "authenticated";
-    BLE_STATE_TERMINATING =      "terminating";
-
+    WALLBOX_RX = "a9da6040-0823-4995-94ec-9ce41ca28833"
+    WALLBOX_SERVICE = "331a36f5-2459-45ea-9d95-6142f0c4b307"
+    WALLBOX_ST = "75A9F022-AF03-4E41-B4BC-9DE90A47D50B"
+    WALLBOX_TX = "a73e9a10-628f-4494-a099-12efaf72258f"
+    WALLBOX_UUID = "0A8C44F5-F80D-8141-6618-2564F1881650"
+    BLE_STATE_DISCONNECTED = "disconnected"
+    BLE_STATE_CONNECTING = "connecting"
+    BLE_STATE_CONNECTED = "connected"
+    BLE_STATE_CONNECTED_PAIRED = "paired"
+    BLE_STATE_CONNECTED_AUTH = "authenticated"
+    BLE_STATE_TERMINATING = "terminating"
     WRITE_ATTEMPTS = 3
     WRITE_RETRY_DELAY_SEC = 1
     # bleak's own connect timeout, scan included; must leave time for
@@ -83,9 +86,11 @@ class EasyWallbox:
     LOGOUT_TIMEOUT_SEC = 3
 
     def __init__(self, queue, mqtt_client):
-        self._client = BleakClient(self.WALLBOX_ADDRESS,
-                                   disconnected_callback=self._on_disconnected,
-                                   timeout=self.BLEAK_CONNECT_TIMEOUT_SEC)
+        self._client = BleakClient(
+            self.WALLBOX_ADDRESS,
+            disconnected_callback=self._on_disconnected,
+            timeout=self.BLEAK_CONNECT_TIMEOUT_SEC,
+        )
         self._queue = queue
         self._lock = asyncio.Lock()
         self._state_lock = asyncio.Lock()
@@ -131,8 +136,10 @@ class EasyWallbox:
         data does not count.
         """
         idle = time.monotonic() - self._last_progress
-        timeout = max(self.PROGRESS_TIMEOUT_SEC,
-                      (self.STALE_POLL_INTERVALS + 1) * (self._poll_interval or 0))
+        timeout = max(
+            self.PROGRESS_TIMEOUT_SEC,
+            (self.STALE_POLL_INTERVALS + 1) * (self._poll_interval or 0),
+        )
         if self._state == self.BLE_STATE_CONNECTED_AUTH:
             status = f"BLE authenticated, last data {idle:.0f}s ago"
         elif self._state == self.BLE_STATE_TERMINATING:
@@ -149,22 +156,24 @@ class EasyWallbox:
         return self._client.is_connected
 
     async def stop(self):
-      state = await self.state()
-      self.state_timer.stop()
-      try:
-        # before the logout, so that its answer is not an unexpected logout
-        await self._set_state(self.BLE_STATE_TERMINATING)
-      except aiomqtt.MqttError as e:
-        log.warning("Could not publish BLE state: %s", e)
-      async with self._lock:
-        # The consumer loop is gone by now: write the logout directly.
-        if state == self.BLE_STATE_CONNECTED_AUTH and await self.is_connected():
-            try:
-                await asyncio.wait_for(self.write(commands.logout()), self.LOGOUT_TIMEOUT_SEC)
-            except BLE_ERRORS as e:
-                log.warning("BLE logout failed: %s", e)
-        if not self.is_demo():
-            await self._client.disconnect()
+        state = await self.state()
+        self.state_timer.stop()
+        try:
+            # before the logout, so that its answer is not an unexpected logout
+            await self._set_state(self.BLE_STATE_TERMINATING)
+        except aiomqtt.MqttError as e:
+            log.warning("Could not publish BLE state: %s", e)
+        async with self._lock:
+            # The consumer loop is gone by now: write the logout directly.
+            if state == self.BLE_STATE_CONNECTED_AUTH and await self.is_connected():
+                try:
+                    await asyncio.wait_for(
+                        self.write(commands.logout()), self.LOGOUT_TIMEOUT_SEC
+                    )
+                except BLE_ERRORS as e:
+                    log.warning("BLE logout failed: %s", e)
+            if not self.is_demo():
+                await self._client.disconnect()
 
     async def reset_connection(self):
         """Tear down the BLE link so that the consumer loop reconnects and
@@ -190,8 +199,11 @@ class EasyWallbox:
     def _on_disconnected(self, client):
         # bleak calls this from the event loop, for our own disconnect() too.
         # A drop during connect() surfaces there as an error or auth timeout.
-        if self._resetting or self._connecting or self._state in (
-                self.BLE_STATE_DISCONNECTED, self.BLE_STATE_TERMINATING):
+        if (
+            self._resetting
+            or self._connecting
+            or self._state in (self.BLE_STATE_DISCONNECTED, self.BLE_STATE_TERMINATING)
+        ):
             return
         log.warning("BLE link lost in state %s", self._state)
         self._disconnect_task = asyncio.create_task(self._handle_disconnect())
@@ -216,7 +228,9 @@ class EasyWallbox:
             if not await self.is_connected():
                 log.warning("BLE link lost without a disconnect event")
             elif silent_for > self.STALE_POLL_INTERVALS * self._poll_interval:
-                log.warning("No data from the wallbox for %ds, reconnecting", silent_for)
+                log.warning(
+                    "No data from the wallbox for %ds, reconnecting", silent_for
+                )
             else:
                 return True
             await self.reset_connection()
@@ -241,25 +255,37 @@ class EasyWallbox:
         now = time.monotonic()
         self._failed_attempts += 1
         retry_in_sec = await settings.get(settings.KEY_BLE_RETRY_INTERVAL)
-        retry_in_sec = min(retry_in_sec * 2 ** min(self._failed_attempts - 1, 10),
-                           self.RECONNECT_BACKOFF_MAX_SEC)
+        retry_in_sec = min(
+            retry_in_sec * 2 ** min(self._failed_attempts - 1, 10),
+            self.RECONNECT_BACKOFF_MAX_SEC,
+        )
         # A long outage must not flood the journal: log the first failure,
         # then a summary every OUTAGE_LOG_INTERVAL_SEC.
-        if self._failed_attempts == 1 or now - self._outage_logged_at >= self.OUTAGE_LOG_INTERVAL_SEC:
-            log.error("BLE connection to %s failed (%d attempts, down for %ds): %s. "
-                      "Retrying in %ds, next report in %ds.",
-                      self.WALLBOX_ADDRESS, self._failed_attempts,
-                      now - self._outage_since, str(error) or type(error).__name__,
-                      retry_in_sec, self.OUTAGE_LOG_INTERVAL_SEC)
+        if (
+            self._failed_attempts == 1
+            or now - self._outage_logged_at >= self.OUTAGE_LOG_INTERVAL_SEC
+        ):
+            log.error(
+                "BLE connection to %s failed (%d attempts, down for %ds): %s. "
+                "Retrying in %ds, next report in %ds.",
+                self.WALLBOX_ADDRESS,
+                self._failed_attempts,
+                now - self._outage_since,
+                str(error) or type(error).__name__,
+                retry_in_sec,
+                self.OUTAGE_LOG_INTERVAL_SEC,
+            )
             self._outage_logged_at = now
         else:
-            log.debug("BLE connection attempt %d failed: %s", self._failed_attempts, error)
+            log.debug(
+                "BLE connection attempt %d failed: %s", self._failed_attempts, error
+            )
         await self.reset_connection()
         self._next_connect_at = now + retry_in_sec
 
     async def write(self, data):
         if isinstance(data, str):
-            data = bytearray(data, 'utf-8')
+            data = bytearray(data, "utf-8")
         if self.is_demo():
             # nothing will answer, count the write as wallbox activity
             self._mark_rx()
@@ -278,8 +304,12 @@ class EasyWallbox:
                 await self.write(data)
                 return True
             except BLE_ERRORS as e:
-                log.warning("BLE write failed (attempt %d/%d): %s",
-                            attempt, self.WRITE_ATTEMPTS, e)
+                log.warning(
+                    "BLE write failed (attempt %d/%d): %s",
+                    attempt,
+                    self.WRITE_ATTEMPTS,
+                    e,
+                )
             if attempt < self.WRITE_ATTEMPTS:
                 await asyncio.sleep(self.WRITE_RETRY_DELAY_SEC)
 
@@ -295,16 +325,24 @@ class EasyWallbox:
 
         await self._set_state(self.BLE_STATE_CONNECTED_PAIRED)
         log.info("Pairing BLE...")
-        paired = sys.platform == "darwin" or self.is_demo() or await self._client.pair(protection_level=2)
+        paired = (
+            sys.platform == "darwin"
+            or self.is_demo()
+            or await self._client.pair(protection_level=2)
+        )
         log.info(f"Paired: {paired}")
         await self._set_state(self.BLE_STATE_CONNECTED_PAIRED)
 
         if self.is_demo():
             return
 
-        await self._client.start_notify(self.WALLBOX_TX, self._notification_handler_rx) #TX NOTIFY
+        await self._client.start_notify(
+            self.WALLBOX_TX, self._notification_handler_rx
+        )  # TX NOTIFY
         log.info("TX NOTIFY STARTED")
-        await self._client.start_notify(self.WALLBOX_ST, self._notification_handler_st) #ST NOTIFY (CANAL BUSMODE)
+        await self._client.start_notify(
+            self.WALLBOX_ST, self._notification_handler_st
+        )  # ST NOTIFY (CANAL BUSMODE)
         log.info("ST NOTIFY STARTED")
 
     async def _auth(self):
@@ -332,8 +370,11 @@ class EasyWallbox:
         if self._outage_since is None:
             log.info("BLE AUTH COMPLETE")
         else:
-            log.info("BLE AUTH COMPLETE after %d failed attempts, down for %ds",
-                     self._failed_attempts, time.monotonic() - self._outage_since)
+            log.info(
+                "BLE AUTH COMPLETE after %d failed attempts, down for %ds",
+                self._failed_attempts,
+                time.monotonic() - self._outage_since,
+            )
         self._failed_attempts = 0
         self._outage_since = None
         # TODO pull the settings
@@ -406,13 +447,19 @@ class EasyWallbox:
         return not self._is_dpm_enabled
 
     _notification_buffer_rx = ""
+
     async def _notification_handler_rx(self, sender, data):
         self._mark_rx()
         self._notification_buffer_rx += data.decode()
         if "\n" in self._notification_buffer_rx:
             log.info("_notification RX received: %s", self._notification_buffer_rx)
             try:
-                await self._mqtt_client.publish(topic=f"{TOPIC}/message", payload=self._notification_buffer_rx, qos=0, retain=False)
+                await self._mqtt_client.publish(
+                    topic=f"{TOPIC}/message",
+                    payload=self._notification_buffer_rx,
+                    qos=0,
+                    retain=False,
+                )
 
                 match self._notification_buffer_rx:
                     case blemap.ANSWER_AUTHOK:
@@ -423,7 +470,9 @@ class EasyWallbox:
                             log.warn("Unexpected logout, authenticating again")
                             self.state_timer.stop()
                             await self._set_state(self.BLE_STATE_CONNECTED_PAIRED)
-                            self._auth_deadline = time.monotonic() + self.AUTH_TIMEOUT_SEC
+                            self._auth_deadline = (
+                                time.monotonic() + self.AUTH_TIMEOUT_SEC
+                            )
                             await self._auth()
                     case _:
                         chunks = self._notification_buffer_rx.split(",")
@@ -433,51 +482,66 @@ class EasyWallbox:
                             if key == "AD" and len(data) > 6:
                                 dpm_status = data[6]
                                 log.info(f"DPM status: {dpm_status}")
-                                self._is_dpm_enabled = (dpm_status != "0")
+                                self._is_dpm_enabled = dpm_status != "0"
                             if key in ["AL", "SL", "IDX"]:
                                 key += f"/{data[0]}"
                                 data = ",".join(data[1:])
-                                await self._mqtt_client.publish(topic=f"{TOPIC}/ble/{key}", payload=data, qos=1, retain=False)
+                                await self._mqtt_client.publish(
+                                    topic=f"{TOPIC}/ble/{key}",
+                                    payload=data,
+                                    qos=1,
+                                    retain=False,
+                                )
                             else:
                                 for idx, value in enumerate(data):
-                                    await self._mqtt_client.publish(topic=f"{TOPIC}/ble/{key}/{idx}", payload=value, qos=1, retain=False)
+                                    await self._mqtt_client.publish(
+                                        topic=f"{TOPIC}/ble/{key}/{idx}",
+                                        payload=value,
+                                        qos=1,
+                                        retain=False,
+                                    )
 
             except Exception:
                 # bleak runs this handler in a task nobody awaits
                 log.error("Failure handling BLE notification", exc_info=True)
             finally:
-                self._notification_buffer_rx = "";
+                self._notification_buffer_rx = ""
 
     _notification_buffer_st = ""
+
     async def _notification_handler_st(self, sender, data):
         self._mark_rx()
         self._notification_buffer_st += data.decode()
         if "\n" in self._notification_buffer_st:
             log.info("_notification ST received: %s", self._notification_buffer_st)
-            self._notification_buffer_st = "";
+            self._notification_buffer_st = ""
 
 
 # Jun 12 20:05:53 ew2mqtt easywallbox-mqtt[98318]: 2025-06-12 20:05:53,411 MainThread      INFO     easywallbox    :172      _notification RX received: $BLE,LOGOUT$DATA,OK
 async def main():
-    mqtt_host = os.getenv('MQTT_HOST', '192.168.2.70')
-    mqtt_port = int(os.getenv('MQTT_PORT', 1883))
-    mqtt_username = os.getenv('MQTT_USERNAME', "")
-    mqtt_password = os.getenv('MQTT_PASSWORD', "")
+    mqtt_host = os.getenv("MQTT_HOST", "192.168.2.70")
+    mqtt_port = int(os.getenv("MQTT_PORT", 1883))
+    mqtt_username = os.getenv("MQTT_USERNAME", "")
+    mqtt_password = os.getenv("MQTT_PASSWORD", "")
 
     queue = asyncio.Queue()
 
     # The callback for when a PUBLISH message is received from the server.
     async def on_message(client):
-        await client.subscribe([
-            # legacy
-            *[(topic, 0) for topic in COMMAND_TOPICS]
-            # settings
-            ,(f"{SETTINGS_TOPIC_PREFIX}+", 0)
-            # evcc - status
-            ,(EVCC_STATUS_SOURCE, 0)
-            # evcc - commands
-            ,(EVCC_COMMAND_MAXCURRENT, 0), (EVCC_COMMAND_MAXCURRENTMILLIS, 0), (EVCC_COMMAND_ENABLE, 0)
-            ])
+        await client.subscribe(
+            [
+                # legacy
+                *[(topic, 0) for topic in COMMAND_TOPICS],
+                # settings
+                (f"{SETTINGS_TOPIC_PREFIX}+", 0),
+                # evcc - status
+                (EVCC_STATUS_SOURCE, 0),
+                # evcc - commands
+                (EVCC_COMMAND_MAXCURRENT, 0),
+                (EVCC_COMMAND_MAXCURRENTMILLIS, 0),
+                (EVCC_COMMAND_ENABLE, 0),
+            ]
+        )
         async for msg in client.messages:
             topic = str(msg.topic)
             message = msg.payload.decode()
@@ -489,15 +553,22 @@ async def main():
                     status_code = int(message)
                     evcc_status = EVCC_STATUS_ERROR
                     if status_code == 3:
-                        evcc_status =  EVCC_STATUS_AVAILABLE
+                        evcc_status = EVCC_STATUS_AVAILABLE
                     elif status_code == 6 or status_code == 5:
                         evcc_status = EVCC_STATUS_VEHICLE_PRESENT
                     elif status_code == 8:
                         evcc_status = EVCC_STATUS_CHARGING
                     else:
                         log.warn(f"Unknown EVCC status: {status_code}")
-                    await client.publish(f"{TOPIC}/evcc/status", evcc_status, qos=0, retain=False)
-                    await client.publish(EVCC_ENABLED, mqtt_bool(eb.is_evcc_enabled()), qos=0, retain=False)
+                    await client.publish(
+                        f"{TOPIC}/evcc/status", evcc_status, qos=0, retain=False
+                    )
+                    await client.publish(
+                        EVCC_ENABLED,
+                        mqtt_bool(eb.is_evcc_enabled()),
+                        qos=0,
+                        retain=False,
+                    )
                     continue
                 elif topic == EVCC_COMMAND_ENABLE:
                     await eb.evcc_enable(message == "true")
@@ -507,7 +578,7 @@ async def main():
                     ble_command = commands.setUserLimit(max_current, millis=False)
                 elif topic == EVCC_COMMAND_MAXCURRENTMILLIS:
                     # evcc will send a float number, multiply by 10 to get mA
-                    max_current = int(round(float(message)*10))
+                    max_current = int(round(float(message) * 10))
                     ble_command = commands.setUserLimit(max_current, millis=True)
 
                 elif topic.startswith(SETTINGS_TOPIC_PREFIX):
@@ -526,26 +597,28 @@ async def main():
                         await settings.set(opt, value)
                     continue
 
-                elif("/" in message):
-                    msx = message.split("/") #limit/10
+                elif "/" in message:
+                    msx = message.split("/")  # limit/10
                     if msx[0] == "raw":
                         log.info(f"Raw command: {msx[1]}")
                         ble_command = msx[1]
                     else:
-                        #TODO: Check if msx contains valid values
-                        ble_command = COMMAND_TOPICS[topic][msx[0]+"/"](msx[1])
+                        # TODO: Check if msx contains valid values
+                        ble_command = COMMAND_TOPICS[topic][msx[0] + "/"](msx[1])
                 else:
                     ble_command = COMMAND_TOPICS[topic][message]
             except Exception:
                 log.error(f"Failure processing MQTT message.", exc_info=True)
                 pass
 
-            if(ble_command != None):
+            if ble_command != None:
                 await queue.put(ble_command)
 
     async with aiomqtt.Client(
-        hostname=mqtt_host, port=mqtt_port,
-        username=mqtt_username, password=mqtt_password,
+        hostname=mqtt_host,
+        port=mqtt_port,
+        username=mqtt_username,
+        password=mqtt_password,
         identifier="easywallbox-mqtt",
         keepalive=60,
         will=aiomqtt.Will(f"{TOPIC}/status/general", "offline"),
@@ -568,13 +641,16 @@ async def main():
         ]
         watchdog_timeout = sd_notify.watchdog_timeout()
         if watchdog_timeout:
-            tasks.append(asyncio.create_task(watchdog(eb, watchdog_timeout), name="watchdog"))
+            tasks.append(
+                asyncio.create_task(watchdog(eb, watchdog_timeout), name="watchdog")
+            )
         # Do not wait for the wallbox: it can be unreachable for hours.
         sd_notify.notify("READY=1", f"STATUS={eb.progress()[1]}")
         stop_task = asyncio.create_task(stop.wait(), name="signal")
         try:
-            done, _ = await asyncio.wait(tasks + [stop_task],
-                                         return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(
+                tasks + [stop_task], return_when=asyncio.FIRST_COMPLETED
+            )
         finally:
             for task in tasks + [stop_task]:
                 task.cancel()
@@ -590,6 +666,7 @@ async def main():
             if task.exception() is not None:
                 raise task.exception()
         raise RuntimeError(f"{done.pop().get_name()} task exited unexpectedly")
+
 
 async def watchdog(eb, timeout):
     log.info("systemd watchdog enabled, timeout %ss", timeout)
@@ -607,6 +684,7 @@ async def watchdog(eb, timeout):
         healthy = progress
         await asyncio.sleep(timeout / 2)
 
+
 async def shutdown(client, eb):
     log.info("Shutting down")
     sd_notify.notify("STOPPING=1")
@@ -621,6 +699,7 @@ async def shutdown(client, eb):
     except aiomqtt.MqttError as e:
         log.warning("Could not publish offline status: %s", e)
 
+
 async def queue_consumer(eb, queue):
     while True:
         if await eb.maintain_connection() and not queue.empty():
@@ -629,12 +708,14 @@ async def queue_consumer(eb, queue):
             await eb.send(item)
         await asyncio.sleep(1)
 
+
 def cli_main():
     try:
         asyncio.run(main())
     except Exception:
         log.critical("Fatal error, exiting", exc_info=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     cli_main()
