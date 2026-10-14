@@ -182,9 +182,6 @@ These topics take a command as payload. A payload `raw/<command>` sends
 `<command>` to the wallbox as is, so include the trailing newline. Limits are
 in amperes.
 
-> These four topics only work with the default `WALLBOX_TOPIC`: the
-> command map in `mqttmap.py` uses the literal `easywallbox/` prefix.
-
 | Topic                | Payload         | Action                       |
 |----------------------|-----------------|------------------------------|
 | `easywallbox/dpm`    | `on`            | Turn DPM on                  |

@@ -20,8 +20,9 @@ def startCharge(delay=0):
 def stopCharge(delay=0):
     return bmap.WALLBOX_COMMANDS["STOP_CHARGE"].format(delay = str(delay))
 
+# Keyed by command topic, relative to WALLBOX_TOPIC
 MQTT2BLE = {
-    "easywallbox/dpm" : {
+    "dpm" : {
         "on" : bmap.WALLBOX_EPROM["SET_DPM_ON"],
         "off" : bmap.WALLBOX_EPROM["SET_DPM_OFF"],
         "limit" : bmap.WALLBOX_EPROM["GET_DPM_LIMIT"],
@@ -29,14 +30,14 @@ MQTT2BLE = {
         "status" : bmap.WALLBOX_EPROM["GET_DPM_STATUS"] #get status
     },
 
-    "easywallbox/charge" : {
+    "charge" : {
         "start" : startCharge(0),
         "start/" : startCharge,
         "stop" : stopCharge(0),
         "stop/" : stopCharge,
     },
 
-    "easywallbox/limit" : {
+    "limit" : {
         "dpm" : bmap.WALLBOX_EPROM["GET_DPM_LIMIT"],
         "dpm/" : setDpmLimit,
         "safe" : bmap.WALLBOX_EPROM["GET_SAFE_LIMIT"],
@@ -45,7 +46,7 @@ MQTT2BLE = {
         "user/" : setUserLimit,
     },
 
-    "easywallbox/read" : {
+    "read" : {
         #"READ_ALARMS" : "$EEP,READ,AL\n",
         "manufacturing" : bmap.WALLBOX_EPROM["READ_MANUFACTURING"],
         #"READ_SESSIONS" : "$EEP,READ,SL\n",

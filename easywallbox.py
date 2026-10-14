@@ -26,6 +26,7 @@ TOPIC = os.getenv('WALLBOX_TOPIC', 'easywallbox')
 HOME_ASSISTANT_DISCOVERY = os.getenv('HOME_ASSISTANT_DISCOVERY', 'homeassistant')
 
 SETTINGS_TOPIC_PREFIX = f"{TOPIC}/settings/"
+COMMAND_TOPICS = {f"{TOPIC}/{name}": cmds for name, cmds in mqttmap.MQTT2BLE.items()}
 EVCC_STATUS_SOURCE = f"{TOPIC}/ble/AD/4"
 EVCC_COMMAND_MAXCURRENT = f"{TOPIC}/evcc/maxcurrent"
 EVCC_COMMAND_MAXCURRENTMILLIS = f"{TOPIC}/evcc/maxcurrentmillis"
@@ -459,7 +460,7 @@ async def main():
     async def on_message(client):
         await client.subscribe([
             # legacy
-            (f"{TOPIC}/dpm",0), (f"{TOPIC}/charge",0), (f"{TOPIC}/limit",0), (f"{TOPIC}/read", 0)
+            *[(topic, 0) for topic in COMMAND_TOPICS]
             # settings
             ,(f"{SETTINGS_TOPIC_PREFIX}+", 0)
             # evcc - status
@@ -522,9 +523,9 @@ async def main():
                         ble_command = msx[1]
                     else:
                         #TODO: Check if msx contains valid values
-                        ble_command = mqttmap.MQTT2BLE[topic][msx[0]+"/"](msx[1])
+                        ble_command = COMMAND_TOPICS[topic][msx[0]+"/"](msx[1])
                 else:
-                    ble_command = mqttmap.MQTT2BLE[topic][message]
+                    ble_command = COMMAND_TOPICS[topic][message]
             except Exception:
                 log.error(f"Failure processing MQTT message.", exc_info=True)
                 pass
