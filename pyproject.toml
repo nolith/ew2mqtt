@@ -28,6 +28,7 @@ py-modules = [
     "mqttmap",
     "readinfo",
     "repeating_timer",
+    "sd_notify",
     "terminal"
 ]
 

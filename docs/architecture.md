@@ -45,6 +45,7 @@ while the wallbox is disconnected are dropped instead of being replayed later.
 | `mqttmap.py`        | MQTT topic to BLE command mapping     |
 | `settings.py`       | Runtime configuration with async access |
 | `repeating_timer.py`| Async periodic task executor          |
+| `sd_notify.py`      | systemd readiness and watchdog notify |
 | `terminal.py`       | Interactive BLE debugging terminal    |
 | `scan.py`           | BLE device scanner utility            |
 | `readinfo.py`       | GATT service explorer                 |

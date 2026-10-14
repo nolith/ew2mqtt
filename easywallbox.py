@@ -11,6 +11,7 @@ import time
 import signal
 import logging
 import settings
+import sd_notify
 from repeating_timer import RepeatingTimer
 from blemap import WALLBOX_EPROM as eeprom
 import blemap
@@ -65,6 +66,9 @@ class EasyWallbox:
     STALE_POLL_INTERVALS = 3
     RECONNECT_BACKOFF_MAX_SEC = 120
     OUTAGE_LOG_INTERVAL_SEC = 600
+    # Longest gap between progress marks (wallbox data or a reconnect loop
+    # step) that still counts as healthy. Must exceed CONNECT_TIMEOUT_SEC.
+    PROGRESS_TIMEOUT_SEC = 60
 
     def __init__(self, queue, mqtt_client):
         self._client = BleakClient(self.WALLBOX_ADDRESS,
@@ -83,6 +87,7 @@ class EasyWallbox:
         self._disconnect_task = None
         self._poll_interval = None
         self._last_rx = 0.0
+        self._last_progress = time.monotonic()
         self._auth_deadline = 0.0
         self._next_connect_at = 0.0
         self._failed_attempts = 0
@@ -99,7 +104,31 @@ class EasyWallbox:
     async def _set_state(self, state):
         async with self._state_lock:
             self._state = state
+            sd_notify.notify(f"STATUS={self.progress()[1]}")
             await self._mqtt_client.publish(f"{TOPIC}/status/ble", state, qos=1)
+
+    def _mark_rx(self):
+        self._last_rx = self._last_progress = time.monotonic()
+
+    def progress(self):
+        """Return (making_progress, status) for the systemd watchdog.
+
+        The bridge makes progress while it receives data from the wallbox,
+        or while the reconnect loop is running. Being connected without any
+        data does not count.
+        """
+        idle = time.monotonic() - self._last_progress
+        timeout = max(self.PROGRESS_TIMEOUT_SEC,
+                      (self.STALE_POLL_INTERVALS + 1) * (self._poll_interval or 0))
+        if self._state == self.BLE_STATE_CONNECTED_AUTH:
+            status = f"BLE authenticated, last data {idle:.0f}s ago"
+        elif self._state == self.BLE_STATE_TERMINATING:
+            return True, "Shutting down"
+        else:
+            status = f"BLE {self._state}, reconnecting after {self._failed_attempts} failed attempts"
+        if idle > timeout:
+            status = f"Stalled: no progress for {idle:.0f}s ({status})"
+        return idle <= timeout, status
 
     async def is_connected(self):
         if self.is_demo():
@@ -160,6 +189,8 @@ class EasyWallbox:
         """
         state = await self.state()
         now = time.monotonic()
+        if state != self.BLE_STATE_CONNECTED_AUTH:
+            self._last_progress = now  # the reconnect loop is alive
         if state == self.BLE_STATE_CONNECTED_AUTH:
             silent_for = now - self._last_rx
             if not await self.is_connected():
@@ -211,7 +242,7 @@ class EasyWallbox:
             data = bytearray(data, 'utf-8')
         if self.is_demo():
             # nothing will answer, count the write as wallbox activity
-            self._last_rx = time.monotonic()
+            self._mark_rx()
         else:
             await self._client.write_gatt_char(self.WALLBOX_RX, data)
         log.info("ble write: %s", data)
@@ -276,7 +307,7 @@ class EasyWallbox:
 
         # set before the state change: maintain_connection() relies on them
         self._poll_interval = await settings.get(settings.KEY_BLE_REFRESH_INTERVAL)
-        self._last_rx = time.monotonic()
+        self._mark_rx()
         await self._set_state(self.BLE_STATE_CONNECTED_AUTH)
         if self._outage_since is None:
             log.info("BLE AUTH COMPLETE")
@@ -356,7 +387,7 @@ class EasyWallbox:
 
     _notification_buffer_rx = ""
     async def _notification_handler_rx(self, sender, data):
-        self._last_rx = time.monotonic()
+        self._mark_rx()
         self._notification_buffer_rx += data.decode()
         if "\n" in self._notification_buffer_rx:
             log.info("_notification RX received: %s", self._notification_buffer_rx)
@@ -399,7 +430,7 @@ class EasyWallbox:
 
     _notification_buffer_st = ""
     async def _notification_handler_st(self, sender, data):
-        self._last_rx = time.monotonic()
+        self._mark_rx()
         self._notification_buffer_st += data.decode()
         if "\n" in self._notification_buffer_st:
             log.info("_notification ST received: %s", self._notification_buffer_st)
@@ -509,6 +540,11 @@ async def main():
             asyncio.create_task(on_message(client), name="mqtt"),
             asyncio.create_task(queue_consumer(eb, queue), name="ble"),
         ]
+        watchdog_timeout = sd_notify.watchdog_timeout()
+        if watchdog_timeout:
+            tasks.append(asyncio.create_task(watchdog(eb, watchdog_timeout), name="watchdog"))
+        # Do not wait for the wallbox: it can be unreachable for hours.
+        sd_notify.notify("READY=1", f"STATUS={eb.progress()[1]}")
         stop_task = asyncio.create_task(stop.wait(), name="signal")
         try:
             done, _ = await asyncio.wait(tasks + [stop_task],
@@ -529,8 +565,25 @@ async def main():
                 raise task.exception()
         raise RuntimeError(f"{done.pop().get_name()} task exited unexpectedly")
 
+async def watchdog(eb, timeout):
+    log.info("systemd watchdog enabled, timeout %ss", timeout)
+    healthy = True
+    while True:
+        progress, status = eb.progress()
+        if progress:
+            sd_notify.notify("WATCHDOG=1", f"STATUS={status}")
+            if not healthy:
+                log.warning("Progress resumed, watchdog pings restored")
+        else:
+            sd_notify.notify(f"STATUS={status}")
+            if healthy:
+                log.error("%s, withholding watchdog pings", status)
+        healthy = progress
+        await asyncio.sleep(timeout / 2)
+
 async def shutdown(client, eb):
     log.info("Shutting down")
+    sd_notify.notify("STOPPING=1")
     # Best effort: never let a cleanup failure replace the original error.
     try:
         await asyncio.wait_for(eb.stop(), SHUTDOWN_TIMEOUT_SEC)
