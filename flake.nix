@@ -43,14 +43,24 @@
 
             doCheck = false;
           };
+
+          treefmt = pkgs.treefmt.withConfig {
+            configFile = ./treefmt.toml;
+            runtimeInputs = [
+              pkgs.nixfmt
+              pkgs.ruff
+            ];
+          };
         in
         {
-          formatter = pkgs.alejandra;
+          formatter = treefmt;
 
           packages.default = ew2mqtt;
 
           devShells.default = pkgs.mkShellNoCC {
             inherit propagatedBuildInputs;
+
+            packages = [ treefmt ];
 
             # shellHook = ''
             #   export PYTHONPATH=".:$PYTHONPATH"

@@ -1,0 +1,10 @@
+# Run with `nix fmt`, or `treefmt` inside `nix develop`
+
+[formatter.nixfmt]
+command = "nixfmt"
+includes = ["*.nix"]
+
+[formatter.ruff-format]
+command = "ruff"
+options = ["format"]
+includes = ["*.py"]
