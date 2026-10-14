@@ -1,7 +1,7 @@
 [project]
-name = "easywallbox"
+name = "ew2mqtt"
 version = "0.1.0"
-description = "EasyWallbox Free2Move Python Mqtt Manager / Monitor"
+description = "BLE to MQTT bridge for Free2Move EasyWallbox chargers"
 authors = [
   { name = "Mihai Stana", email = "2051364+mihaistana@users.noreply.github.com" },
   { name = "Alessio Caiazza", email = "code.git@caiazza.info" }
@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-easywallbox-mqtt = "easywallbox:cli_main"
-easywallbox-terminal = "terminal:main"
+ew2mqtt = "easywallbox:cli_main"
+ew2mqtt-terminal = "terminal:main"
 ble_scan = "scan:main"
 
 [tool.setuptools]

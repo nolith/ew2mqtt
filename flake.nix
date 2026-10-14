@@ -1,5 +1,5 @@
 {
-  description = "EasyWallbox Free2Move Python Mqtt Manager / Monitor";
+  description = "BLE to MQTT bridge for Free2Move EasyWallbox chargers";
 
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -50,10 +50,10 @@
               pyobjc-core
             ];
 
-          easywallbox = pythonPackages.buildPythonApplication {
+          ew2mqtt = pythonPackages.buildPythonApplication {
             inherit propagatedBuildInputs;
 
-            pname = "easywallbox";
+            pname = "ew2mqtt";
             version = "0.1.0";
             src = ./.;
             pyproject = true;
@@ -68,7 +68,7 @@
         {
           formatter = pkgs.alejandra;
 
-          packages.default = easywallbox;
+          packages.default = ew2mqtt;
 
           devShells.default = pkgs.mkShellNoCC {
             inherit propagatedBuildInputs;

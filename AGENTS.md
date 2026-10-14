@@ -8,8 +8,8 @@ Uses **Nix flakes** with direnv: `direnv allow` or `nix develop`
 
 ## Run
 
-- `easywallbox-mqtt` - Main MQTT bridge daemon
-- `easywallbox-terminal [ADDR]` - Interactive BLE terminal
+- `ew2mqtt` - Main MQTT bridge daemon
+- `ew2mqtt-terminal [ADDR]` - Interactive BLE terminal
 - `ble_scan` - Scan for BLE devices
 
 ## Documentation
