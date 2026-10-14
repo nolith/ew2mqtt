@@ -70,6 +70,7 @@ class EasyWallbox:
     # Longest gap between progress marks (wallbox data or a reconnect loop
     # step) that still counts as healthy. Must exceed CONNECT_TIMEOUT_SEC.
     PROGRESS_TIMEOUT_SEC = 60
+    LOGOUT_TIMEOUT_SEC = 3
 
     def __init__(self, queue, mqtt_client):
         self._client = BleakClient(self.WALLBOX_ADDRESS,
@@ -137,13 +138,20 @@ class EasyWallbox:
         return self._client.is_connected
 
     async def stop(self):
-      await self._queue.put(commands.logout())
+      state = await self.state()
       self.state_timer.stop()
       try:
+        # before the logout, so that its answer is not an unexpected logout
         await self._set_state(self.BLE_STATE_TERMINATING)
       except aiomqtt.MqttError as e:
         log.warning("Could not publish BLE state: %s", e)
       async with self._lock:
+        # The consumer loop is gone by now: write the logout directly.
+        if state == self.BLE_STATE_CONNECTED_AUTH and await self.is_connected():
+            try:
+                await asyncio.wait_for(self.write(commands.logout()), self.LOGOUT_TIMEOUT_SEC)
+            except BLE_ERRORS as e:
+                log.warning("BLE logout failed: %s", e)
         if not self.is_demo():
             await self._client.disconnect()
 
