@@ -16,6 +16,12 @@
         "aarch64-linux"
         "aarch64-darwin"
       ];
+
+      flake.nixosModules = rec {
+        ew2mqtt = import ./nix/nixos-module.nix { inherit (inputs) self; };
+        default = ew2mqtt;
+      };
+
       perSystem =
         {
           inputs',

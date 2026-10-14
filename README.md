@@ -50,6 +50,29 @@ The flake exposes `packages.<system>.default`. As a flake input:
 inputs.ew2mqtt.url = "github:nolith/ew2mqtt";
 ```
 
+### NixOS
+
+`nixosModules.default` runs the bridge as a hardened systemd service, see
+[`nix/nixos-module.nix`](nix/nixos-module.nix) for every option:
+
+```nix
+{
+  imports = [ inputs.ew2mqtt.nixosModules.default ];
+
+  services.ew2mqtt = {
+    enable = true;
+    wallboxAddress = "00:00:00:00:00:00";
+    mqttHost = "mqtt.example.lan";
+    # WALLBOX_PIN, MQTT_USERNAME and MQTT_PASSWORD
+    environmentFile = "/run/secrets/ew2mqtt.env";
+  };
+}
+```
+
+It enables BlueZ, runs the bridge as a dynamic user restarted together with
+`bluetooth.service`, and restarts BlueZ after 15 failed reconnects
+(`bluezReset.attempts`), as a stale bluetoothd can time out every connect.
+
 ### Without Nix
 
 ew2mqtt needs Python 3.10 or newer, [bleak](https://github.com/hbldh/bleak)
