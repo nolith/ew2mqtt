@@ -2,6 +2,7 @@
 import asyncio
 import sys
 from bleak import BleakClient
+from bleak.exc import BleakError
 import aiomqtt
 import os
 import commands
@@ -13,11 +14,6 @@ import settings
 from repeating_timer import RepeatingTimer
 from blemap import WALLBOX_EPROM as eeprom
 import blemap
-
-import threading
-
-_cleanup_lock = threading.Lock()
-_cleanup_ran = False
 
 FORMAT = ('%(asctime)-15s %(threadName)-15s '
           '%(levelname)-8s %(module)-15s:%(lineno)-8s %(message)s')
@@ -39,6 +35,11 @@ EVCC_STATUS_ERROR = "D"
 
 settings = settings.Settings()
 
+# Failures of a single BLE operation that leave the process healthy: they are
+# retried or recovered by reconnecting, never fatal.
+BLE_ERRORS = (BleakError, asyncio.TimeoutError, OSError, EOFError)
+SHUTDOWN_TIMEOUT_SEC = 10
+
 class EasyWallbox:
     WALLBOX_ADDRESS = os.getenv('WALLBOX_ADDRESS', 'demo')
     WALLBOX_PIN = os.getenv('WALLBOX_PIN', '9844')
@@ -55,6 +56,9 @@ class EasyWallbox:
     BLE_STATE_CONNECTED_PAIRED =   "paired";
     BLE_STATE_CONNECTED_AUTH =   "authenticated";
     BLE_STATE_TERMINATING =      "terminating";
+
+    WRITE_ATTEMPTS = 3
+    WRITE_RETRY_DELAY_SEC = 1
 
     def __init__(self, queue, mqtt_client):
         self._client = BleakClient(self.WALLBOX_ADDRESS)
@@ -90,11 +94,27 @@ class EasyWallbox:
 
     async def stop(self):
       await self._queue.put(commands.logout())
-      await self._set_state(self.BLE_STATE_TERMINATING)
+      self.state_timer.stop()
+      try:
+        await self._set_state(self.BLE_STATE_TERMINATING)
+      except aiomqtt.MqttError as e:
+        log.warning("Could not publish BLE state: %s", e)
       async with self._lock:
-        self.state_timer.stop()
         if not self.is_demo():
             await self._client.disconnect()
+
+    async def reset_connection(self):
+        """Tear down the BLE link so that the consumer loop reconnects and
+        authenticates again."""
+        self.state_timer.stop()
+        if await self.state() == self.BLE_STATE_TERMINATING:
+            return
+        if not self.is_demo():
+            try:
+                await self._client.disconnect()
+            except BLE_ERRORS as e:
+                log.warning("BLE disconnect failed: %s", e)
+        await self._set_state(self.BLE_STATE_DISCONNECTED)
 
     async def write(self, data):
         if isinstance(data, str):
@@ -102,6 +122,26 @@ class EasyWallbox:
         if not self.is_demo():
             await self._client.write_gatt_char(self.WALLBOX_RX, data)
         log.info("ble write: %s", data)
+
+    async def send(self, data):
+        """Write a command, retrying transient GATT failures.
+
+        If the write keeps failing the command is dropped and the connection
+        is reset, so that the consumer loop starts over with a fresh link.
+        """
+        for attempt in range(1, self.WRITE_ATTEMPTS + 1):
+            try:
+                await self.write(data)
+                return True
+            except BLE_ERRORS as e:
+                log.warning("BLE write failed (attempt %d/%d): %s",
+                            attempt, self.WRITE_ATTEMPTS, e)
+            if attempt < self.WRITE_ATTEMPTS:
+                await asyncio.sleep(self.WRITE_RETRY_DELAY_SEC)
+
+        log.error("Dropping BLE command %r and resetting the connection", data)
+        await self.reset_connection()
+        return False
 
     async def _pair(self):
         state = await self.state()
@@ -242,6 +282,9 @@ class EasyWallbox:
                                 for idx, value in enumerate(data):
                                     await self._mqtt_client.publish(topic=f"{TOPIC}/ble/{key}/{idx}", payload=value, qos=1, retain=False)
 
+            except Exception:
+                # bleak runs this handler in a task nobody awaits
+                log.error("Failure handling BLE notification", exc_info=True)
             finally:
                 self._notification_buffer_rx = "";
 
@@ -347,57 +390,65 @@ async def main():
         await client.publish(f"{TOPIC}/status/general", "online", qos=1)
         await client.publish(f"{TOPIC}/evcc/enabled", "false", qos=1)
 
-        loop = asyncio.get_event_loop()
-        loop.add_signal_handler(signal.SIGINT,
-                            lambda: asyncio.create_task(on_exit(client, eb, queue)))
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop.set)
 
-        # Avvia publisher e listener
-        await asyncio.gather(
-            on_message(client),
-            queue_consumer(client, eb, queue),
-        )
+        tasks = [
+            asyncio.create_task(on_message(client), name="mqtt"),
+            asyncio.create_task(queue_consumer(eb, queue), name="ble"),
+        ]
+        stop_task = asyncio.create_task(stop.wait(), name="signal")
+        try:
+            done, _ = await asyncio.wait(tasks + [stop_task],
+                                         return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in tasks + [stop_task]:
+                task.cancel()
+            await asyncio.gather(*tasks, stop_task, return_exceptions=True)
+            await shutdown(client, eb)
 
-async def on_exit(client, eb, queue):
-    global _cleanup_ran
-    with _cleanup_lock:
-        if _cleanup_ran:
+        if stop_task in done:
+            log.info("Stopped by signal")
             return
 
-        _cleanup_ran = True
+        # Every task runs forever: getting here means one of them failed.
+        for task in done:
+            if task.exception() is not None:
+                raise task.exception()
+        raise RuntimeError(f"{done.pop().get_name()} task exited unexpectedly")
+
+async def shutdown(client, eb):
     log.info("Shutting down")
-    await eb.stop()
-    await client.publish(f"{TOPIC}/status/general", "offline", qos=1)
-    await client.publish(f"{TOPIC}/evcc/enabled", "false", qos=1)
-
-    sys.exit(0)
-
-async def queue_consumer(client, eb, queue):
+    # Best effort: never let a cleanup failure replace the original error.
     try:
-        while True:
-            if not await eb.is_connected() and not await eb.is_connecting():
-                log.info("Lost connection to BLE, reconnecting...")
-                await eb.connect()
-            elif queue.empty():
-                pass
-            else:
-                item = await queue.get()
-                log.info("Consuming ...")
-                if item is None:
-                    log.info("nothing to consume!")
-                    break
-                log.info(f"Consuming item {item}...")
-                await eb.write(item)
-            await asyncio.sleep(1)
-    except Exception as e:
-        log.error(f"Application error: {e}")
-    finally:
-        await on_exit(client, eb, queue)
+        await asyncio.wait_for(eb.stop(), SHUTDOWN_TIMEOUT_SEC)
+    except Exception:
+        log.warning("BLE shutdown failed", exc_info=True)
+    try:
+        await client.publish(f"{TOPIC}/status/general", "offline", qos=1)
+        await client.publish(f"{TOPIC}/evcc/enabled", "false", qos=1)
+    except aiomqtt.MqttError as e:
+        log.warning("Could not publish offline status: %s", e)
+
+async def queue_consumer(eb, queue):
+    while True:
+        if not await eb.is_connected() and not await eb.is_connecting():
+            log.info("Lost connection to BLE, reconnecting...")
+            await eb.connect()
+        elif not queue.empty():
+            item = queue.get_nowait()
+            log.info(f"Consuming item {item}...")
+            await eb.send(item)
+        await asyncio.sleep(1)
 
 def cli_main():
-  try:
-      asyncio.run(main())
-  except asyncio.CancelledError:
-      pass
+    try:
+        asyncio.run(main())
+    except Exception:
+        log.critical("Fatal error, exiting", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     cli_main()

@@ -55,3 +55,14 @@ All topics are prefixed with `WALLBOX_TOPIC` (default: `easywallbox`):
 - `easywallbox/evcc/maxcurrent` - Set max current (amps)
 - `easywallbox/evcc/maxcurrentmillis` - Set max current (milliamps)
 - `easywallbox/evcc/enable` - Enable/disable EVCC control
+
+## Error Handling and Exit Codes
+
+A failed BLE operation (GATT write, connect, disconnect) is never fatal:
+writes are retried a few times, then the command is dropped and the BLE
+link is reset so the consumer loop reconnects and authenticates again.
+
+| Exit code | Meaning                                                        |
+|-----------|----------------------------------------------------------------|
+| `0`       | Clean shutdown after `SIGTERM` or `SIGINT`                     |
+| `1`       | Unrecoverable error: MQTT connection lost, or a task crashed   |
