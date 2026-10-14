@@ -69,7 +69,10 @@
             treefmt = treefmt.check ./.;
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            nixos = import ./nix/nixos-test.nix { inherit pkgs ew2mqtt; };
+            nixos = import ./nix/nixos-test.nix {
+              inherit pkgs;
+              nixosModule = inputs.self.nixosModules.default;
+            };
           };
 
           devShells.default = pkgs.mkShellNoCC {
