@@ -25,6 +25,7 @@ log.setLevel(logging.INFO)
 TOPIC = os.getenv('WALLBOX_TOPIC', 'easywallbox')
 HOME_ASSISTANT_DISCOVERY = os.getenv('HOME_ASSISTANT_DISCOVERY', 'homeassistant')
 
+SETTINGS_TOPIC_PREFIX = f"{TOPIC}/settings/"
 EVCC_STATUS_SOURCE = f"{TOPIC}/ble/AD/4"
 EVCC_COMMAND_MAXCURRENT = f"{TOPIC}/evcc/maxcurrent"
 EVCC_COMMAND_MAXCURRENTMILLIS = f"{TOPIC}/evcc/maxcurrentmillis"
@@ -452,7 +453,7 @@ async def main():
             # legacy
             (f"{TOPIC}/dpm",0), (f"{TOPIC}/charge",0), (f"{TOPIC}/limit",0), (f"{TOPIC}/read", 0)
             # settings
-            ,(f"{TOPIC}/settings/+", 0)
+            ,(f"{SETTINGS_TOPIC_PREFIX}+", 0)
             # evcc - status
             ,(EVCC_STATUS_SOURCE, 0)
             # evcc - commands
@@ -490,15 +491,21 @@ async def main():
                     max_current = int(round(float(message)*10))
                     ble_command = commands.setUserLimit(max_current, millis=True)
 
-                elif topic.startswith("settings/"):
-                    opt = topic.split("/", maxsplit=1)[1]
+                elif topic.startswith(SETTINGS_TOPIC_PREFIX):
+                    opt = topic.removeprefix(SETTINGS_TOPIC_PREFIX)
                     log.info(f"Updating setting {opt}={message}")
                     try:
-                        await settings.set(opt, int(message))
+                        value = int(message)
                     except ValueError as e:
                         log.error(f"Invalid settings value for {opt}: {e}")
-                    finally:
                         continue
+                    if opt not in await settings.keys():
+                        log.error(f"Unknown setting {opt}")
+                    elif value <= 0:
+                        log.error(f"Invalid settings value for {opt}: must be positive")
+                    else:
+                        await settings.set(opt, value)
+                    continue
 
                 elif("/" in message):
                     msx = message.split("/") #limit/10
