@@ -3,7 +3,7 @@
 
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
 
   outputs =
@@ -15,7 +15,6 @@
         "x86_64-linux"
         "aarch64-linux"
         "aarch64-darwin"
-        "x86_64-darwin"
       ];
       perSystem =
         {
@@ -24,31 +23,11 @@
           ...
         }:
         let
-          pythonPackages = pkgs.python312Packages;
-          propagatedBuildInputs =
-            with pythonPackages;
-            [
-              aiomqtt
-            ]
-            ++ lib.optional (pkgs.stdenv.isLinux) bleak
-            ++ lib.optionals (pkgs.stdenv.isDarwin) [
-              (pythonPackages.callPackage ./nix/pyobjc-framework-corebluetooth.nix { })
-              (pythonPackages.callPackage ./nix/pyobjc-framework-libdispatch.nix { })
-              (pythonPackages.buildPythonPackage rec {
-                pname = "bleak";
-                version = bleak.version; # "0.22.3";
-                format = "wheel";
-
-                src = fetchPypi {
-                  inherit pname version format;
-                  hash = "sha256-5gE3E5bjV9le48JW22W32mJMlO9vBR1H386T6oNhwi4=";
-                  dist = "py3";
-                  python = "py3";
-                  platform = "any";
-                };
-              })
-              pyobjc-core
-            ];
+          pythonPackages = pkgs.python3Packages;
+          propagatedBuildInputs = with pythonPackages; [
+            aiomqtt
+            bleak
+          ];
 
           ew2mqtt = pythonPackages.buildPythonApplication {
             inherit propagatedBuildInputs;
