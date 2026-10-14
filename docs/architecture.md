@@ -19,6 +19,22 @@ States are defined as class constants:
 - `BLE_STATE_CONNECTED_AUTH`
 - `BLE_STATE_TERMINATING`
 
+### Reconnect
+
+`queue_consumer` calls `EasyWallbox.maintain_connection()` once per second.
+The link is reset to `DISCONNECTED`, and a new connection is attempted, when:
+
+- bleak's `disconnected_callback` reports a link loss
+- the client reports disconnected while the state is still `AUTHENTICATED`
+- no data arrives for `STALE_POLL_INTERVALS` (3) poll intervals
+- the wallbox does not answer the login within `AUTH_TIMEOUT_SEC` (20s)
+- `connect()` fails or takes longer than `CONNECT_TIMEOUT_SEC` (30s)
+
+Failed attempts back off exponentially from `ble_retry_interval` (10s) up to
+`RECONNECT_BACKOFF_MAX_SEC` (120s). The first failure of an outage is logged,
+then one summary every `OUTAGE_LOG_INTERVAL_SEC` (10 minutes). Commands queued
+while the wallbox is disconnected are dropped instead of being replayed later.
+
 ## Components
 
 | File                | Purpose                               |
