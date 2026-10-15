@@ -142,7 +142,7 @@ without `NOTIFY_SOCKET` it runs as a plain process.
 - `READY=1` once connected to MQTT, without waiting for the wallbox, which may
   be unreachable for hours
 - `WATCHDOG=1` every `WatchdogSec / 2`, only while data arrived from the
-  wallbox or the reconnect loop ran within the last 60 seconds (or 4 poll
+  wallbox or the reconnect loop ran within the last 90 seconds (or 4 poll
   intervals, if longer)
 - `STATUS=` with the BLE state and the age of the last data
 - `STOPPING=1` on shutdown

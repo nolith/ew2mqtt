@@ -71,18 +71,23 @@ class EasyWallbox:
     BLE_STATE_TERMINATING = "terminating"
     WRITE_ATTEMPTS = 3
     WRITE_RETRY_DELAY_SEC = 1
-    # bleak's own connect timeout, scan included; must leave time for
-    # pairing and login within CONNECT_TIMEOUT_SEC
-    BLEAK_CONNECT_TIMEOUT_SEC = 10
-    CONNECT_TIMEOUT_SEC = 30
+    # bleak applies its timeout twice: to the scan for the wallbox, which
+    # only runs until a client has found it once, then to Device1.Connect,
+    # where the kernel waits for an advertisement before connecting. The
+    # wallbox advertises every 6-18s, up to 37s, so 10s missed it often;
+    # bleak cancels the pending connect when its timeout expires.
+    BLEAK_CONNECT_TIMEOUT_SEC = 30
+    # Scan and connect, plus pairing and the login write
+    CONNECT_TIMEOUT_SEC = 2 * BLEAK_CONNECT_TIMEOUT_SEC + 10
     AUTH_TIMEOUT_SEC = 20
     # Unanswered poll intervals before a silent link is considered dead
     STALE_POLL_INTERVALS = 3
     RECONNECT_BACKOFF_MAX_SEC = 120
     OUTAGE_LOG_INTERVAL_SEC = 600
     # Longest gap between progress marks (wallbox data or a reconnect loop
-    # step) that still counts as healthy. Must exceed CONNECT_TIMEOUT_SEC.
-    PROGRESS_TIMEOUT_SEC = 60
+    # step) that still counts as healthy. A connect blocks the loop, so it
+    # must exceed CONNECT_TIMEOUT_SEC.
+    PROGRESS_TIMEOUT_SEC = CONNECT_TIMEOUT_SEC + 20
     LOGOUT_TIMEOUT_SEC = 3
 
     def __init__(self, queue, mqtt_client):
