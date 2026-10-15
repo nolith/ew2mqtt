@@ -61,10 +61,11 @@ in
 
       attempts = lib.mkOption {
         type = lib.types.ints.positive;
-        default = 15;
+        default = 12;
         description = ''
-          Failed reconnects before BlueZ gets restarted. The bridge backs off
-          to 120s between attempts, so 15 is about 20 minutes down.
+          Failed reconnects before BlueZ gets restarted. An attempt waits up
+          to 30s for the wallbox and the bridge backs off to 120s between
+          attempts, so 12 is about 25 minutes down.
         '';
       };
     };

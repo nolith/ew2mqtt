@@ -70,7 +70,7 @@ inputs.ew2mqtt.url = "github:nolith/ew2mqtt";
 ```
 
 It enables BlueZ, runs the bridge as a dynamic user restarted together with
-`bluetooth.service`, and restarts BlueZ after 15 failed reconnects
+`bluetooth.service`, and restarts BlueZ after 12 failed reconnects
 (`bluezReset.attempts`), as a stale bluetoothd can time out every connect.
 
 ### Without Nix
