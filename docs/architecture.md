@@ -28,7 +28,9 @@ The link is reset to `DISCONNECTED`, and a new connection is attempted, when:
 - the client reports disconnected while the state is still `AUTHENTICATED`
 - no data arrives for `STALE_POLL_INTERVALS` (3) poll intervals
 - the wallbox does not answer the login within `AUTH_TIMEOUT_SEC` (20s)
-- `connect()` fails or takes longer than `CONNECT_TIMEOUT_SEC` (30s)
+- `connect()` fails or takes longer than `CONNECT_TIMEOUT_SEC` (70s): bleak
+  gets `BLEAK_CONNECT_TIMEOUT_SEC` (30s) for the scan and again for the
+  connect, as the wallbox can advertise only every 6-37s
 
 Failed attempts back off exponentially from `ble_retry_interval` (10s) up to
 `RECONNECT_BACKOFF_MAX_SEC` (120s). The first failure of an outage is logged,

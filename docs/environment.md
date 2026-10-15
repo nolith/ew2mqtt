@@ -50,7 +50,7 @@ notification is a no-op.
 - `READY=1` once MQTT is connected, without waiting for the wallbox
 - `WATCHDOG=1` every `WatchdogSec / 2`, only while the bridge makes progress:
   data from the wallbox, or a running reconnect loop, within the last
-  `PROGRESS_TIMEOUT_SEC` (60s, or 4 poll intervals if longer)
+  `PROGRESS_TIMEOUT_SEC` (90s, or 4 poll intervals if longer)
 - `STATUS=` on every BLE state change and watchdog check
 - `STOPPING=1` when shutdown starts
 

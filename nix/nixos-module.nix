@@ -125,7 +125,7 @@ in
         # READY=1 once MQTT is up (not waiting for the wallbox), then
         # WATCHDOG=1 every WatchdogSec/2 while it receives data or its
         # reconnect loop makes progress. A wedged loop stops the pings and
-        # systemd kills it within about 90s (60s grace plus WatchdogSec).
+        # systemd kills it within about 2 minutes (90s grace plus WatchdogSec).
         Type = "notify";
         NotifyAccess = "main";
         WatchdogSec = "30s";
