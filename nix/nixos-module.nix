@@ -49,6 +49,34 @@ in
       '';
     };
 
+    standalone = {
+      enable = lib.mkEnableOption ''
+        standalone mode at startup: the bridge ignores evcc, and the
+        wallbox's DPM keeps the household under `dpmLimit`. The
+        `easywallbox/standalone` MQTT topic switches it at runtime
+      '';
+
+      dpmLimit = lib.mkOption {
+        type = lib.types.nullOr (lib.types.ints.between 6 63);
+        default = null;
+        example = 21;
+        description = ''
+          DPM limit in amperes, the household current the wallbox keeps
+          under: 5 kW at 230 V is 21 A. Required by `standalone.enable`.
+        '';
+      };
+
+      userLimit = lib.mkOption {
+        type = lib.types.nullOr (lib.types.ints.between 6 32);
+        default = null;
+        example = 16;
+        description = ''
+          User limit in amperes, the most the wallbox charges at in
+          standalone mode; `null` leaves the wallbox's own.
+        '';
+      };
+    };
+
     bluezReset = {
       enable = lib.mkOption {
         type = lib.types.bool;
@@ -72,6 +100,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.standalone.enable -> cfg.standalone.dpmLimit != null;
+        message = "services.ew2mqtt.standalone.enable needs standalone.dpmLimit";
+      }
+    ];
+
     hardware.bluetooth.enable = lib.mkDefault true;
 
     environment.systemPackages = [ (lib.lowPrio cfg.package) ];
@@ -118,6 +153,13 @@ in
         WALLBOX_ADDRESS = cfg.wallboxAddress;
         MQTT_HOST = cfg.mqttHost;
         MQTT_PORT = toString cfg.mqttPort;
+        STANDALONE = lib.boolToString cfg.standalone.enable;
+        STANDALONE_DPM_LIMIT = lib.mkIf (cfg.standalone.dpmLimit != null) (
+          toString cfg.standalone.dpmLimit
+        );
+        STANDALONE_USER_LIMIT = lib.mkIf (cfg.standalone.userLimit != null) (
+          toString cfg.standalone.userLimit
+        );
       };
 
       serviceConfig = {
