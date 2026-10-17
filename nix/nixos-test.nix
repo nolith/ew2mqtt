@@ -6,6 +6,39 @@
 pkgs.testers.runNixOSTest {
   name = "ew2mqtt";
 
+  # DPM keeps the household safe without evcc; demo mode logs every write
+  nodes.standalone = {
+    imports = [ nixosModule ];
+
+    environment.systemPackages = [ pkgs.mosquitto ];
+
+    services.mosquitto = {
+      enable = true;
+      listeners = [
+        {
+          address = "127.0.0.1";
+          port = 1883;
+          omitPasswordAuth = true;
+          settings.allow_anonymous = true;
+          acl = [ "topic readwrite #" ];
+        }
+      ];
+    };
+
+    services.ew2mqtt = {
+      enable = true;
+      wallboxAddress = "demo";
+      mqttHost = "127.0.0.1";
+      standalone = {
+        enable = true;
+        dpmLimit = 21;
+        userLimit = 16;
+      };
+    };
+
+    systemd.services.ew2mqtt.after = [ "mosquitto.service" ];
+  };
+
   nodes.machine = {
     imports = [ nixosModule ];
 
@@ -93,5 +126,47 @@ pkgs.testers.runNixOSTest {
     with subtest("bridge shuts down cleanly"):
         machine.systemctl("stop ew2mqtt.service")
         machine.fail("systemctl is-failed ew2mqtt.service")
+
+    def wrote(index, value):
+        # demo mode logs each write as bytearray(b'$EEP,WRITE,IDX,...\\n')
+        standalone.wait_until_succeeds(
+            "journalctl -u ew2mqtt.service | grep -F 'ble write'"
+            f" | grep -F 'WRITE,IDX,{index},{value}\\n'"
+        )
+
+    def state(name, value):
+        standalone.wait_until_succeeds(
+            f"mosquitto_sub -h 127.0.0.1 -C 1 -W 5 -t easywallbox/standalone/{name}"
+            f" | grep -x '{value}'"
+        )
+
+    def publish(topic, message):
+        standalone.succeed(f"mosquitto_pub -h 127.0.0.1 -t easywallbox/{topic} -m '{message}'")
+
+    with subtest("standalone mode holds DPM after login"):
+        standalone.wait_for_unit("ew2mqtt.service")
+        state("enabled", "true")
+        state("dpm_limit", "21")
+        state("user_limit", "16")
+        wrote(178, 1)
+        wrote(158, 210)
+        wrote(174, 160)
+
+    with subtest("standalone mode ignores evcc"):
+        publish("evcc/enable", "true")
+        standalone.wait_until_succeeds(
+            "journalctl -u ew2mqtt.service"
+            " | grep 'Standalone mode: ignoring evcc commands'"
+        )
+        standalone.fail("journalctl -u ew2mqtt.service | grep -F 'IDX,178,0'")
+
+    with subtest("standalone mode switches at runtime"):
+        publish("standalone", "dpm/25")
+        state("dpm_limit", "25")
+        wrote(158, 250)
+        publish("standalone", "off")
+        state("enabled", "false")
+        publish("evcc/enable", "true")
+        wrote(178, 0)
   '';
 }
