@@ -202,7 +202,8 @@ In the tables below `easywallbox` is the default `WALLBOX_TOPIC`.
 Responses are split on commas: in `$DATA,READ,AD,...` the key is `AD` and the
 fields after it are numbered from 0. The last field keeps the trailing
 newline. The bridge polls `$DATA,READ,AD` every `ble_refresh_interval`
-seconds.
+seconds. [The wallbox protocol](docs/wallbox-protocol.md) describes what the
+fields mean, as observed.
 
 ### Commands
 
@@ -270,8 +271,9 @@ wallbox's DPM: its power meter keeps the household under the DPM limit. Use it
 when evcc cannot be trusted to reach the wallbox. On every BLE login the bridge
 writes DPM on, the DPM limit and, when set, the user limit, and writes again a
 setting the wallbox reports with another value, as for evcc. It also reads the
-safe limit for monitoring: the reply goes to `easywallbox/message`. The wallbox
-stores these settings, so it keeps protecting the supply while the link is down.
+safe limit for monitoring, published as `easywallbox/ble/IDX/156` in tenths of
+an ampere. The wallbox stores these settings, so it keeps protecting the supply
+while the link is down.
 
 For example, a 6 kW supply at 230 V, capped at 5 kW to be safe: 5000 W / 230 V
 is 21.7 A, so a DPM limit of `21`.
@@ -345,7 +347,9 @@ upstream:
 | Get safe limit         | `$EEP,READ,IDX,156\n`         |
 | Get DPM status         | `$EEP,READ,IDX,178\n`         |
 
-Limits are in tenths of an ampere (`dA`): `160` is 16 A.
+Limits are in tenths of an ampere (`dA`): `160` is 16 A. What the wallbox
+actually answers, from the bridge's logs, is in
+[the wallbox protocol](docs/wallbox-protocol.md).
 
 ## Development
 
