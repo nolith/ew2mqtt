@@ -30,6 +30,7 @@ nix fmt
 |-------------------------|----------------|------------------------------|
 | `WALLBOX_ADDRESS`       | `demo`         | BLE MAC address of wallbox   |
 | `WALLBOX_PIN`           | `9844`         | BLE authentication PIN       |
+| `WALLBOX_PASSKEY`       | `001234`       | BLE pairing passkey          |
 | `WALLBOX_TOPIC`         | `easywallbox`  | MQTT topic prefix            |
 | `MQTT_HOST`             | `192.168.2.70` | MQTT broker hostname         |
 | `MQTT_PORT`             | `1883`         | MQTT broker port             |

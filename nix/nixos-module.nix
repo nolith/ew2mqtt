@@ -26,6 +26,15 @@ in
       description = "BLE MAC address of the wallbox, or `demo` to run without one.";
     };
 
+    passkey = lib.mkOption {
+      type = lib.types.strMatching "[0-9]{6}";
+      default = "001234";
+      description = ''
+        BLE pairing passkey, the P field on the wallbox's sticker: the
+        same on every unit seen so far.
+      '';
+    };
+
     mqttHost = lib.mkOption {
       type = lib.types.str;
       example = "10.10.107.2";
@@ -151,6 +160,7 @@ in
 
       environment = {
         WALLBOX_ADDRESS = cfg.wallboxAddress;
+        WALLBOX_PASSKEY = cfg.passkey;
         MQTT_HOST = cfg.mqttHost;
         MQTT_PORT = toString cfg.mqttPort;
         STANDALONE = lib.boolToString cfg.standalone.enable;

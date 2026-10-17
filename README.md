@@ -102,6 +102,7 @@ ew2mqtt reads its configuration from environment variables.
 |-------------------------|----------------|-------------------------------------------------------------|
 | `WALLBOX_ADDRESS`       | `demo`         | Wallbox BLE MAC address; `demo` runs without a wallbox      |
 | `WALLBOX_PIN`           | `9844`         | BLE PIN, see [Finding the PIN](#finding-the-pin)            |
+| `WALLBOX_PASSKEY`       | `001234`       | BLE pairing passkey, see [Pairing](#pairing)                |
 | `WALLBOX_TOPIC`         | `easywallbox`  | Prefix of every MQTT topic                                  |
 | `MQTT_HOST`             | `192.168.2.70` | MQTT broker host                                            |
 | `MQTT_PORT`             | `1883`         | MQTT broker port                                            |
@@ -122,8 +123,9 @@ Run `ble_scan`, or `bluetoothctl scan le`, and look for a device named like
 
 ### Finding the PIN
 
-The PIN is not the `001234` shown by the official app. Scan the QR code on the
-sticker inside the wallbox; it reads like:
+The PIN is not the `001234` shown by the official app: that is the pairing
+passkey, see [Pairing](#pairing). Scan the QR code on the sticker inside the
+wallbox; it reads like:
 
 ```
 BT:N:2911AA00101728;M:F2ME.EWE08APEFXX;D:eWB01728;P:001234;A:9844;;
@@ -134,10 +136,40 @@ BT:N:2911AA00101728;M:F2ME.EWE08APEFXX;D:eWB01728;P:001234;A:9844;;
 | `N`   | Serial      | `2911AA00101728`   |
 | `M`   | Part number | `F2ME.EWE08APEFXX` |
 | `D`   | BT name     | `eWB01728`         |
-| `P`   | Device PIN  | `001234`           |
+| `P`   | Passkey     | `001234`           |
 | `A`   | BLE PIN     | `9844`             |
 
 `WALLBOX_PIN` is the `A` value.
+
+### Pairing
+
+The wallbox pairs over BLE with passkey entry, using the `P` value: `001234` on
+every unit seen so far, the default of `WALLBOX_PASSKEY`. On Linux the bridge
+registers a BlueZ pairing agent that answers the passkey request for the
+wallbox only, and pairs with bonding on its first connection. When the wallbox
+forgets the bond, BlueZ reports an authentication failure: the bridge removes
+the bond and pairs again on the next connection.
+
+BlueZ makes every adapter pairable while a pairing agent is registered. The
+bridge keeps the wallbox's adapter at its value from before the agent, or not
+pairable for an adapter plugged in later, and makes it pairable only while
+pairing.
+
+To pair by hand instead, stop the bridge, since the wallbox accepts one
+connection at a time, and run `bluetoothctl`:
+
+```
+pairable on
+agent KeyboardOnly
+default-agent
+scan le
+pair 00:00:00:00:00:00
+```
+
+Enter the passkey when asked, check that `info 00:00:00:00:00:00` shows
+`Bonded: yes`, then `pairable off`. A stale bond goes first with
+`remove 00:00:00:00:00:00`. An adapter that is not pairable pairs without
+bonding, so the keys are lost with the link.
 
 ## systemd
 

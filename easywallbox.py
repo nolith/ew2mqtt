@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import re
 import sys
 from bleak import BleakClient
 from bleak.exc import BleakError
@@ -125,6 +126,8 @@ SHUTDOWN_TIMEOUT_SEC = 10
 class EasyWallbox:
     WALLBOX_ADDRESS = os.getenv("WALLBOX_ADDRESS", "demo")
     WALLBOX_PIN = os.getenv("WALLBOX_PIN", "9844")
+    # The P field on the sticker, for BLE pairing; the same on known units
+    WALLBOX_PASSKEY = os.getenv("WALLBOX_PASSKEY", "001234")
 
     WALLBOX_RX = "a9da6040-0823-4995-94ec-9ce41ca28833"
     WALLBOX_SERVICE = "331a36f5-2459-45ea-9d95-6142f0c4b307"
@@ -160,7 +163,9 @@ class EasyWallbox:
     # Rewrites of a held setting the wallbox answers with another value
     HELD_REWRITES = 2
 
-    def __init__(self, queue, mqtt_client, standalone=None):
+    def __init__(self, queue, mqtt_client, standalone=None, pairing=None):
+        # bluez_pairing.Pairing on Linux, None where BlueZ is not used
+        self.pairing = pairing
         self._client = self._new_client()
         self._queue = queue
         self._lock = asyncio.Lock()
@@ -269,6 +274,13 @@ class EasyWallbox:
                 log.warning("BLE disconnect failed: %s", e)
             finally:
                 self._resetting = False
+        if self.pairing is not None and self.pairing.take_auth_failure():
+            # The wallbox forgot the bond: pair again on the next connect.
+            log.warning("The wallbox rejected the stored key, removing the bond")
+            try:
+                await self._client.unpair()
+            except BLE_ERRORS as e:
+                log.warning("Removing the bond failed: %s", e)
         self._notification_buffer_rx = ""
         self._notification_buffer_st = ""
         if self._outage_since is None:
@@ -413,12 +425,16 @@ class EasyWallbox:
 
         await self._set_state(self.BLE_STATE_CONNECTED_PAIRED)
         log.info("Pairing BLE...")
-        paired = (
-            sys.platform == "darwin"
-            or self.is_demo()
-            or await self._client.pair(protection_level=2)
-        )
-        log.info(f"Paired: {paired}")
+        # macOS pairs on its own, on the first encrypted access
+        if sys.platform != "darwin" and not self.is_demo():
+            pairing = self.pairing
+            if pairing is not None and not await pairing.is_paired():
+                async with pairing.bondable():
+                    await self._client.pair(protection_level=2)
+            else:
+                # returns at once when already paired
+                await self._client.pair(protection_level=2)
+        log.info("Paired")
         await self._set_state(self.BLE_STATE_CONNECTED_PAIRED)
 
         if self.is_demo():
@@ -499,6 +515,8 @@ class EasyWallbox:
 
     async def _connect_and_auth(self):
         if not self.is_demo():
+            if self.pairing is not None:
+                await self.pairing.keep_pairable()
             await self._client.connect()
         log.info(f"Connected on {self.WALLBOX_ADDRESS}: {await self.is_connected()}")
         await self._set_state(self.BLE_STATE_CONNECTED)
@@ -741,6 +759,9 @@ async def main():
     mqtt_password = os.getenv("MQTT_PASSWORD", "")
     # only the state at startup, MQTT can switch it later
     standalone = Standalone.from_env(os.environ)
+    if not re.fullmatch(r"[0-9]{6}", EasyWallbox.WALLBOX_PASSKEY):
+        raise ValueError("WALLBOX_PASSKEY must be 6 digits")
+    pairing = await start_pairing()
 
     queue = asyncio.Queue()
 
@@ -851,7 +872,7 @@ async def main():
     ) as client:
         log.info("[MQTT] Connected.")
 
-        eb = EasyWallbox(queue, client, standalone)
+        eb = EasyWallbox(queue, client, standalone, pairing)
 
         await client.publish(f"{TOPIC}/status/general", "online", qos=1)
         await client.publish(EVCC_ENABLED, mqtt_bool(False), qos=1)
@@ -914,6 +935,23 @@ async def watchdog(eb, timeout):
         await asyncio.sleep(timeout / 2)
 
 
+async def start_pairing():
+    """Register the BlueZ pairing agent, None without BlueZ."""
+    if not sys.platform.startswith("linux") or EasyWallbox.WALLBOX_ADDRESS == "demo":
+        return None
+    from bluez_pairing import Pairing
+
+    pairing = Pairing(EasyWallbox.WALLBOX_ADDRESS, EasyWallbox.WALLBOX_PASSKEY)
+    try:
+        await pairing.start()
+    except Exception as e:
+        # A bonded wallbox works without it.
+        log.warning("No BlueZ pairing agent, pairing needs bluetoothctl: %s", e)
+        await pairing.stop()
+        return None
+    return pairing
+
+
 async def shutdown(client, eb):
     log.info("Shutting down")
     sd_notify.notify("STOPPING=1")
@@ -922,6 +960,8 @@ async def shutdown(client, eb):
         await asyncio.wait_for(eb.stop(), SHUTDOWN_TIMEOUT_SEC)
     except Exception:
         log.warning("BLE shutdown failed", exc_info=True)
+    if eb.pairing is not None:
+        await eb.pairing.stop()
     try:
         await client.publish(f"{TOPIC}/status/general", "offline", qos=1)
         await client.publish(EVCC_ENABLED, mqtt_bool(False), qos=1)
