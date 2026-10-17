@@ -89,6 +89,8 @@ class EasyWallbox:
     # must exceed CONNECT_TIMEOUT_SEC.
     PROGRESS_TIMEOUT_SEC = CONNECT_TIMEOUT_SEC + 20
     LOGOUT_TIMEOUT_SEC = 3
+    # Rewrites of a held setting the wallbox answers with another value
+    HELD_REWRITES = 2
 
     def __init__(self, queue, mqtt_client):
         self._client = BleakClient(
@@ -116,6 +118,12 @@ class EasyWallbox:
         self._failed_attempts = 0
         self._outage_since = time.monotonic()
         self._outage_logged_at = 0.0
+        # EEPROM index -> value the wallbox must hold, written after every
+        # login since commands queued while it is unreachable are dropped
+        self._held = {}
+        # Indexes written after login and not confirmed yet
+        self._held_checks = set()
+        self._rewrites_left = {}
 
     def is_demo(self):
         return self.WALLBOX_ADDRESS == "demo"
@@ -382,7 +390,8 @@ class EasyWallbox:
             )
         self._failed_attempts = 0
         self._outage_since = None
-        # TODO pull the settings
+        # before the state timer, so they go out first on a short session
+        await self._apply_held()
         log.info("Starting ble state timer...")
         self.state_timer.start(self._poll_interval)
 
@@ -435,18 +444,67 @@ class EasyWallbox:
         await self._enqueue_ble_command("READ_SUPPLY_VOLTAGE")
 
     async def evcc_enable(self, enable=True):
-        log.warn("EVCC enable")
-        if await self.state() != self.BLE_STATE_CONNECTED_AUTH:
-            log.warn("Connection not authorized, ignoring evcc enable command")
-            return
-
+        log.info("evcc %s the charge", "enables" if enable else "holds")
         if enable:
-            await self._queue.put(commands.setDpmOff())
+            self._held.pop(commands.IDX_DPM_LIMIT, None)
+            await self.hold(commands.IDX_DPM_STATUS, 0)
         else:
-            await self._queue.put(commands.setDpmOn())
             # this is very tricky - I could not find a way to disable/pause a charge process
             # so the only way is set the limit to 1A so that the DPM will not allow the charge to start
-            await self._queue.put(commands.setDpmLimit(1))
+            await self.hold(commands.IDX_DPM_STATUS, 1)
+            await self.hold(commands.IDX_DPM_LIMIT, 10)
+
+    async def hold(self, index, value):
+        """Keep an EEPROM index at value.
+
+        Writes it now when logged in, and again after every login.
+        """
+        value = str(value)
+        self._held[index] = value
+        if await self.state() == self.BLE_STATE_CONNECTED_AUTH:
+            await self._queue.put(commands.writeIndex(index, value))
+        else:
+            log.info(
+                "Wallbox not logged in, writing IDX %s=%s after login", index, value
+            )
+
+    async def _apply_held(self):
+        """Write every held setting, then confirm each from the wallbox."""
+        if not self._held:
+            return
+        log.info("Writing held settings %s", self._held)
+        self._held_checks = set(self._held)
+        self._rewrites_left = dict.fromkeys(self._held, self.HELD_REWRITES)
+        for index, value in self._held.items():
+            await self._queue.put(commands.writeIndex(index, value))
+
+    async def _check_held(self, index, value):
+        """Check an EEPROM value the wallbox reported for a held index.
+
+        The wallbox echoes every write as $EEP,WRITE,IDX,<index>,<value>,
+        and its app data carries the DPM switch and the user limit, which
+        also covers a write whose echo was lost. Only the writes after
+        login are checked, so a manual write still sticks until the next
+        login.
+        """
+        want = self._held.get(index)
+        if index not in self._held_checks or want is None:
+            return
+        if value == want:
+            self._held_checks.discard(index)
+            log.info("Wallbox confirmed IDX %s=%s", index, value)
+        elif self._rewrites_left[index] > 0:
+            self._rewrites_left[index] -= 1
+            log.warning(
+                "Wallbox has IDX %s=%s instead of %s, writing it again",
+                index,
+                value,
+                want,
+            )
+            await self._queue.put(commands.writeIndex(index, want))
+        else:
+            self._held_checks.discard(index)
+            log.error("Wallbox keeps IDX %s=%s instead of %s", index, value, want)
 
     def is_evcc_enabled(self):
         return not self._is_dpm_enabled
@@ -484,10 +542,22 @@ class EasyWallbox:
                         if len(chunks) > 3:
                             key = chunks[2]
                             data = chunks[3:]
+                            # A write echo; a read reply is assumed to look
+                            # the same, never seen yet.
+                            if key == "IDX" and len(data) > 1:
+                                await self._check_held(data[0], data[1].strip())
                             if key == "AD" and len(data) > 6:
                                 dpm_status = data[6]
                                 log.info(f"DPM status: {dpm_status}")
                                 self._is_dpm_enabled = dpm_status != "0"
+                                await self._check_held(
+                                    commands.IDX_DPM_STATUS, dpm_status.strip()
+                                )
+                            if key == "AD" and len(data) > 10:
+                                # field 10 is the user limit, in dA
+                                await self._check_held(
+                                    commands.IDX_USER_LIMIT, data[10].strip()
+                                )
                             if key in ["AL", "SL", "IDX"]:
                                 key += f"/{data[0]}"
                                 data = ",".join(data[1:])
@@ -579,12 +649,13 @@ async def main():
                     await eb.evcc_enable(message == "true")
                     continue
                 elif topic == EVCC_COMMAND_MAXCURRENT:
-                    max_current = int(message)
-                    ble_command = commands.setUserLimit(max_current, millis=False)
+                    await eb.hold(commands.IDX_USER_LIMIT, int(message) * 10)
+                    continue
                 elif topic == EVCC_COMMAND_MAXCURRENTMILLIS:
-                    # evcc will send a float number, multiply by 10 to get mA
+                    # evcc sends decimal amperes, the wallbox takes tenths
                     max_current = int(round(float(message) * 10))
-                    ble_command = commands.setUserLimit(max_current, millis=True)
+                    await eb.hold(commands.IDX_USER_LIMIT, max_current)
+                    continue
 
                 elif topic.startswith(SETTINGS_TOPIC_PREFIX):
                     opt = topic.removeprefix(SETTINGS_TOPIC_PREFIX)

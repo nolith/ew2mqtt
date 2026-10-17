@@ -40,3 +40,18 @@ def authBle(pin="0000"):  # 9844
 
 def logout():
     return bmap.WALLBOX_BLE["LOGOUT"]
+
+
+# EEPROM indexes; limits are stored in tenths of an ampere
+IDX_SAFE_LIMIT = "156"
+IDX_DPM_LIMIT = "158"
+IDX_USER_LIMIT = "174"
+IDX_DPM_STATUS = "178"
+
+
+def writeIndex(index, value):
+    return f"$EEP,WRITE,IDX,{index},{value}\n"
+
+
+def readIndex(index):
+    return f"$EEP,READ,IDX,{index}\n"
