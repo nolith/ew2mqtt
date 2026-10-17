@@ -63,7 +63,8 @@ All topics are prefixed with `WALLBOX_TOPIC` (default: `easywallbox`):
 - `easywallbox/status/ble` - BLE connection state
 - `easywallbox/status/general` - Online/offline status
 - `easywallbox/message` - Raw BLE responses
-- `easywallbox/ble/{key}/{index}` - Parsed BLE data
+- `easywallbox/ble/{key}/{index}` - Parsed BLE data, see
+  [wallbox-protocol.md](wallbox-protocol.md) for the fields
 
 ### Command Topics (subscribed by the bridge)
 - `easywallbox/dpm` - DPM control (on/off/limit/status)
