@@ -21,6 +21,7 @@ ble_scan = "scan:main"
 [tool.setuptools]
 py-modules = [
     "easywallbox",
+    "bluez_pairing",
     "scan",
     "settings",
     "blemap",
