@@ -96,15 +96,18 @@ In `ew2mqtt-terminal`, log in first by typing `$BLE,AUTH,<pin>`.
 
 ew2mqtt reads its configuration from environment variables.
 
-| Variable          | Default        | Description                                            |
-|-------------------|----------------|--------------------------------------------------------|
-| `WALLBOX_ADDRESS` | `demo`         | Wallbox BLE MAC address; `demo` runs without a wallbox |
-| `WALLBOX_PIN`     | `9844`         | BLE PIN, see [Finding the PIN](#finding-the-pin)       |
-| `WALLBOX_TOPIC`   | `easywallbox`  | Prefix of every MQTT topic                             |
-| `MQTT_HOST`       | `192.168.2.70` | MQTT broker host                                       |
-| `MQTT_PORT`       | `1883`         | MQTT broker port                                       |
-| `MQTT_USERNAME`   | (empty)        | MQTT username                                          |
-| `MQTT_PASSWORD`   | (empty)        | MQTT password                                          |
+| Variable                | Default        | Description                                                 |
+|-------------------------|----------------|-------------------------------------------------------------|
+| `WALLBOX_ADDRESS`       | `demo`         | Wallbox BLE MAC address; `demo` runs without a wallbox      |
+| `WALLBOX_PIN`           | `9844`         | BLE PIN, see [Finding the PIN](#finding-the-pin)            |
+| `WALLBOX_TOPIC`         | `easywallbox`  | Prefix of every MQTT topic                                  |
+| `MQTT_HOST`             | `192.168.2.70` | MQTT broker host                                            |
+| `MQTT_PORT`             | `1883`         | MQTT broker port                                            |
+| `MQTT_USERNAME`         | (empty)        | MQTT username                                               |
+| `MQTT_PASSWORD`         | (empty)        | MQTT password                                               |
+| `STANDALONE`            | `false`        | Start in [standalone mode](#standalone): `true` or `false`  |
+| `STANDALONE_DPM_LIMIT`  | (none)         | Standalone DPM limit, 6-63 A; needed with `STANDALONE=true` |
+| `STANDALONE_USER_LIMIT` | (none)         | Standalone user limit, 6-32 A; unset leaves it as it is     |
 
 The MQTT client identifier is `easywallbox-mqtt`. In `demo` mode, BLE writes
 are only logged and authentication succeeds after one second, which is useful
@@ -257,6 +260,47 @@ another value. Only the echo confirms the DPM limit.
 | `5`, `6` | `B`         | Vehicle present |
 | `8`      | `C`         | Charging        |
 | other    | `D`         | Error           |
+
+### Standalone
+
+In standalone mode the bridge ignores evcc and leaves the charge current to the
+wallbox's DPM: its power meter keeps the household under the DPM limit. Use it
+when evcc cannot be trusted to reach the wallbox. On every BLE login the bridge
+writes DPM on, the DPM limit and, when set, the user limit, and writes again a
+setting the wallbox reports with another value, as for evcc. It also reads the
+safe limit for monitoring: the reply goes to `easywallbox/message`. The wallbox
+stores these settings, so it keeps protecting the supply while the link is down.
+
+For example, a 6 kW supply at 230 V, capped at 5 kW to be safe: 5000 W / 230 V
+is 21.7 A, so a DPM limit of `21`.
+
+`STANDALONE`, `STANDALONE_DPM_LIMIT` and `STANDALONE_USER_LIMIT` set the
+state at startup; this topic changes it at runtime, until the next restart:
+
+| Topic                    | Payload    | Action                                              |
+|--------------------------|------------|-----------------------------------------------------|
+| `easywallbox/standalone` | `on`       | Turn standalone mode on; needs a DPM limit          |
+| `easywallbox/standalone` | `off`      | Turn standalone mode off, evcc controls the wallbox |
+| `easywallbox/standalone` | `dpm/<A>`  | Set the DPM limit, 6-63 A                           |
+| `easywallbox/standalone` | `user/<A>` | Set the user limit, 6-32 A                          |
+| `easywallbox/standalone` | `user/off` | Leave the user limit as it is                       |
+
+Turning it on, or changing a limit while it is on, writes the settings at once
+when logged in, as after a login. Turning it off leaves the
+wallbox as it is until evcc's next command.
+
+While it is on, the `easywallbox/evcc/enable`, `easywallbox/evcc/maxcurrent`
+and `easywallbox/evcc/maxcurrentmillis` commands are ignored; the status
+topics are still published. The `easywallbox/dpm` and `easywallbox/limit`
+commands still work, but the next login writes the standalone settings again.
+
+The bridge publishes its state, retained, at startup and on every change:
+
+| Topic                               | Payload                                  |
+|-------------------------------------|------------------------------------------|
+| `easywallbox/standalone/enabled`    | `true` or `false`                        |
+| `easywallbox/standalone/dpm_limit`  | DPM limit in A, or cleared when not set  |
+| `easywallbox/standalone/user_limit` | User limit in A, or cleared when not set |
 
 ### Settings
 
