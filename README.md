@@ -229,7 +229,8 @@ in amperes.
 | `easywallbox/read`   | `voltage`       | Read the supply voltage      |
 
 Commands are sent only while the BLE session is authenticated; commands that
-arrive while the wallbox is disconnected are dropped.
+arrive while the wallbox is disconnected are dropped. The evcc commands below
+are the exception.
 
 ### evcc
 
@@ -239,6 +240,13 @@ arrive while the wallbox is disconnected are dropped.
 | `easywallbox/evcc/maxcurrentmillis` | Decimal, A    | Set the user limit with 0.1 A resolution, for example `6.5` |
 | `easywallbox/evcc/enable`           | `true`        | Turn DPM off, so evcc controls the current                  |
 | `easywallbox/evcc/enable`           | anything else | Turn DPM on with a 1 A DPM limit, which holds the charge    |
+
+The bridge holds the settings from the last evcc command: it writes them again
+after every BLE login, so a command that arrived while the wallbox was
+unreachable, or a write lost with the link, still reaches it. The wallbox
+echoes every write, and its app data carries the DPM switch (field 6) and the
+user limit (field 10): the bridge writes again a setting either shows with
+another value. Only the echo confirms the DPM limit.
 
 `easywallbox/evcc/status` is derived from field 4 of the app data,
 `easywallbox/ble/AD/4`:

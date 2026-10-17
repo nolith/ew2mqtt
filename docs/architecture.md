@@ -35,7 +35,10 @@ The link is reset to `DISCONNECTED`, and a new connection is attempted, when:
 Failed attempts back off exponentially from `ble_retry_interval` (10s) up to
 `RECONNECT_BACKOFF_MAX_SEC` (120s). The first failure of an outage is logged,
 then one summary every `OUTAGE_LOG_INTERVAL_SEC` (10 minutes). Commands queued
-while the wallbox is disconnected are dropped instead of being replayed later.
+while the wallbox is disconnected are dropped instead of being replayed later,
+except the held EEPROM settings: `EasyWallbox.hold()` keeps evcc's last
+settings, which are written again after every login and confirmed from the
+write echoes and the app data.
 
 ## Components
 
