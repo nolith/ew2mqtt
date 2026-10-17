@@ -78,6 +78,12 @@ All topics are prefixed with `WALLBOX_TOPIC` (default: `easywallbox`):
 - `easywallbox/evcc/maxcurrentmillis` - Set max current (milliamps)
 - `easywallbox/evcc/enable` - Enable/disable EVCC control
 
+### Standalone Mode
+- `easywallbox/standalone` - on/off, `dpm/<A>`, `user/<A>`, `user/off`; evcc
+  commands are ignored while on, and `Standalone.held()` is written after
+  every login
+- `easywallbox/standalone/{enabled,dpm_limit,user_limit}` - Retained state
+
 ## Error Handling and Exit Codes
 
 A failed BLE operation (GATT write, connect, disconnect) is never fatal:

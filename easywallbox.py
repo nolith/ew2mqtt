@@ -38,6 +38,12 @@ EVCC_STATUS_VEHICLE_PRESENT = "B"
 EVCC_STATUS_CHARGING = "C"
 EVCC_STATUS_ERROR = "D"
 EVCC_ENABLED = f"{TOPIC}/evcc/enabled"
+EVCC_COMMAND_TOPICS = (
+    EVCC_COMMAND_ENABLE,
+    EVCC_COMMAND_MAXCURRENT,
+    EVCC_COMMAND_MAXCURRENTMILLIS,
+)
+STANDALONE_TOPIC = f"{TOPIC}/standalone"
 
 settings = settings.Settings()
 
@@ -46,6 +52,68 @@ def mqtt_bool(value):
     # paho would publish a bool as "True"/"False"; evcc reads both, but the
     # bridge publishes and accepts lowercase
     return "true" if value else "false"
+
+
+def parse_amps(name, value, low, high):
+    try:
+        amps = int(value)
+    except ValueError:
+        raise ValueError(f"{name} must be whole amperes, not {value!r}") from None
+    if not low <= amps <= high:
+        raise ValueError(f"{name} must be {low}-{high} A, not {amps}")
+    return amps
+
+
+class Standalone:
+    """Leave the charge current to the wallbox's DPM and ignore evcc.
+
+    DPM, the wallbox's own power meter, keeps the household under the DPM
+    limit; the user limit caps the charger.
+    """
+
+    # Below 6 A of headroom no car can charge.
+    DPM_LIMIT_A = (6, 63)
+    # The wallbox charges at 6-32 A.
+    USER_LIMIT_A = (6, 32)
+
+    def __init__(self, enabled=False, dpm_limit=None, user_limit=None):
+        if enabled and dpm_limit is None:
+            raise ValueError("standalone mode needs a DPM limit")
+        self.enabled = enabled
+        self.dpm_limit = dpm_limit
+        self.user_limit = user_limit
+        self.evcc_ignored_logged = False
+
+    @classmethod
+    def from_env(cls, env):
+        enabled = env.get("STANDALONE", "false").lower()
+        if enabled not in ("true", "false"):
+            raise ValueError(f"STANDALONE must be true or false, not {enabled!r}")
+        dpm = env.get("STANDALONE_DPM_LIMIT")
+        user = env.get("STANDALONE_USER_LIMIT")
+        return cls(
+            enabled == "true",
+            None if dpm is None else cls.parse_dpm_limit(dpm),
+            None if user is None else cls.parse_user_limit(user),
+        )
+
+    @classmethod
+    def parse_dpm_limit(cls, value):
+        return parse_amps("DPM limit", value, *cls.DPM_LIMIT_A)
+
+    @classmethod
+    def parse_user_limit(cls, value):
+        return parse_amps("user limit", value, *cls.USER_LIMIT_A)
+
+    def held(self):
+        """The EEPROM values the wallbox must hold, in tenths of an ampere."""
+        held = {
+            commands.IDX_DPM_STATUS: "1",
+            commands.IDX_DPM_LIMIT: str(self.dpm_limit * 10),
+        }
+        if self.user_limit is not None:
+            held[commands.IDX_USER_LIMIT] = str(self.user_limit * 10)
+        return held
 
 
 # Failures of a single BLE operation that leave the process healthy: they are
@@ -92,7 +160,7 @@ class EasyWallbox:
     # Rewrites of a held setting the wallbox answers with another value
     HELD_REWRITES = 2
 
-    def __init__(self, queue, mqtt_client):
+    def __init__(self, queue, mqtt_client, standalone=None):
         self._client = BleakClient(
             self.WALLBOX_ADDRESS,
             disconnected_callback=self._on_disconnected,
@@ -124,6 +192,9 @@ class EasyWallbox:
         # Indexes written after login and not confirmed yet
         self._held_checks = set()
         self._rewrites_left = {}
+        self.standalone = standalone or Standalone()
+        if self.standalone.enabled:
+            self._held = self.standalone.held()
 
     def is_demo(self):
         return self.WALLBOX_ADDRESS == "demo"
@@ -477,6 +548,67 @@ class EasyWallbox:
         self._rewrites_left = dict.fromkeys(self._held, self.HELD_REWRITES)
         for index, value in self._held.items():
             await self._queue.put(commands.writeIndex(index, value))
+        if self.standalone.enabled:
+            # For monitoring: the reply, in a format not seen yet, goes to
+            # easywallbox/message like any other.
+            await self._queue.put(commands.readIndex(commands.IDX_SAFE_LIMIT))
+
+    async def standalone_command(self, message):
+        """Handle a command on the standalone topic, see the README."""
+        standalone = self.standalone
+        was_enabled = standalone.enabled
+        try:
+            match message.split("/"):
+                case ["on"]:
+                    if standalone.dpm_limit is None:
+                        log.error(
+                            "Standalone mode needs a DPM limit, send dpm/<A> first"
+                        )
+                        return
+                    standalone.enabled = True
+                case ["off"]:
+                    standalone.enabled = False
+                case ["dpm", limit]:
+                    standalone.dpm_limit = Standalone.parse_dpm_limit(limit)
+                case ["user", "off"]:
+                    standalone.user_limit = None
+                case ["user", limit]:
+                    standalone.user_limit = Standalone.parse_user_limit(limit)
+                case _:
+                    log.error("Unknown standalone command %r", message)
+                    return
+        except ValueError as e:
+            log.error("Invalid standalone command %r: %s", message, e)
+            return
+
+        if standalone.enabled:
+            if not was_enabled:
+                log.info("Standalone mode on: ignoring evcc, DPM limits the current")
+                standalone.evcc_ignored_logged = False
+            self._held = standalone.held()
+            if await self.state() == self.BLE_STATE_CONNECTED_AUTH:
+                await self._apply_held()
+        elif was_enabled:
+            # The wallbox keeps the standalone settings until evcc's next
+            # command replaces them.
+            log.info("Standalone mode off: evcc controls the wallbox again")
+            self._held = {}
+        await self.publish_standalone()
+
+    async def publish_standalone(self):
+        standalone = self.standalone
+        for name, value in (
+            ("enabled", mqtt_bool(standalone.enabled)),
+            ("dpm_limit", standalone.dpm_limit),
+            ("user_limit", standalone.user_limit),
+        ):
+            # An empty retained payload clears the topic: no limit set.
+            await self._mqtt_client.publish(
+                f"{STANDALONE_TOPIC}/{name}",
+                "" if value is None else str(value),
+                qos=1,
+                retain=True,
+            )
 
     async def _check_held(self, index, value):
         """Check an EEPROM value the wallbox reported for a held index.
@@ -598,6 +730,8 @@ async def main():
     mqtt_port = int(os.getenv("MQTT_PORT", 1883))
     mqtt_username = os.getenv("MQTT_USERNAME", "")
     mqtt_password = os.getenv("MQTT_PASSWORD", "")
+    # only the state at startup, MQTT can switch it later
+    standalone = Standalone.from_env(os.environ)
 
     queue = asyncio.Queue()
 
@@ -612,9 +746,8 @@ async def main():
                 # evcc - status
                 (EVCC_STATUS_SOURCE, 0),
                 # evcc - commands
-                (EVCC_COMMAND_MAXCURRENT, 0),
-                (EVCC_COMMAND_MAXCURRENTMILLIS, 0),
-                (EVCC_COMMAND_ENABLE, 0),
+                *[(topic, 0) for topic in EVCC_COMMAND_TOPICS],
+                (STANDALONE_TOPIC, 0),
             ]
         )
         async for msg in client.messages:
@@ -644,6 +777,14 @@ async def main():
                         qos=0,
                         retain=False,
                     )
+                    continue
+                elif topic == STANDALONE_TOPIC:
+                    await eb.standalone_command(message)
+                    continue
+                elif topic in EVCC_COMMAND_TOPICS and eb.standalone.enabled:
+                    if not eb.standalone.evcc_ignored_logged:
+                        log.info("Standalone mode: ignoring evcc commands")
+                        eb.standalone.evcc_ignored_logged = True
                     continue
                 elif topic == EVCC_COMMAND_ENABLE:
                     await eb.evcc_enable(message == "true")
@@ -701,10 +842,13 @@ async def main():
     ) as client:
         log.info("[MQTT] Connected.")
 
-        eb = EasyWallbox(queue, client)
+        eb = EasyWallbox(queue, client, standalone)
 
         await client.publish(f"{TOPIC}/status/general", "online", qos=1)
         await client.publish(EVCC_ENABLED, mqtt_bool(False), qos=1)
+        await eb.publish_standalone()
+        if standalone.enabled:
+            log.info("Standalone mode: ignoring evcc, DPM limits the current")
 
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
