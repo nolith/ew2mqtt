@@ -271,8 +271,9 @@ wallbox's DPM: its power meter keeps the household under the DPM limit. Use it
 when evcc cannot be trusted to reach the wallbox. On every BLE login the bridge
 writes DPM on, the DPM limit and, when set, the user limit, and writes again a
 setting the wallbox reports with another value, as for evcc. It also reads the
-safe limit for monitoring: the reply goes to `easywallbox/message`. The wallbox
-stores these settings, so it keeps protecting the supply while the link is down.
+safe limit for monitoring, published as `easywallbox/ble/IDX/156` in tenths of
+an ampere. The wallbox stores these settings, so it keeps protecting the supply
+while the link is down.
 
 For example, a 6 kW supply at 230 V, capped at 5 kW to be safe: 5000 W / 230 V
 is 21.7 A, so a DPM limit of `21`.

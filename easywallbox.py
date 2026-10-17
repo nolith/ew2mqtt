@@ -549,8 +549,7 @@ class EasyWallbox:
         for index, value in self._held.items():
             await self._queue.put(commands.writeIndex(index, value))
         if self.standalone.enabled:
-            # For monitoring: the reply, in a format not seen yet, goes to
-            # easywallbox/message like any other.
+            # For monitoring, published as easywallbox/ble/IDX/156
             await self._queue.put(commands.readIndex(commands.IDX_SAFE_LIMIT))
 
     async def standalone_command(self, message):
@@ -674,8 +673,8 @@ class EasyWallbox:
                         if len(chunks) > 3:
                             key = chunks[2]
                             data = chunks[3:]
-                            # A write echo; a read reply is assumed to look
-                            # the same, never seen yet.
+                            # A write echo or a read reply, both
+                            # $EEP,<WRITE|READ>,IDX,<index>,<value>
                             if key == "IDX" and len(data) > 1:
                                 await self._check_held(data[0], data[1].strip())
                             if key == "AD" and len(data) > 6:
