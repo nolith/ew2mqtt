@@ -202,7 +202,8 @@ In the tables below `easywallbox` is the default `WALLBOX_TOPIC`.
 Responses are split on commas: in `$DATA,READ,AD,...` the key is `AD` and the
 fields after it are numbered from 0. The last field keeps the trailing
 newline. The bridge polls `$DATA,READ,AD` every `ble_refresh_interval`
-seconds.
+seconds. [The wallbox protocol](docs/wallbox-protocol.md) describes what the
+fields mean, as observed.
 
 ### Commands
 
@@ -345,7 +346,9 @@ upstream:
 | Get safe limit         | `$EEP,READ,IDX,156\n`         |
 | Get DPM status         | `$EEP,READ,IDX,178\n`         |
 
-Limits are in tenths of an ampere (`dA`): `160` is 16 A.
+Limits are in tenths of an ampere (`dA`): `160` is 16 A. What the wallbox
+actually answers, from the bridge's logs, is in
+[the wallbox protocol](docs/wallbox-protocol.md).
 
 ## Development
 
