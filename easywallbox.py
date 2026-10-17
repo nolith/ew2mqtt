@@ -161,11 +161,7 @@ class EasyWallbox:
     HELD_REWRITES = 2
 
     def __init__(self, queue, mqtt_client, standalone=None):
-        self._client = BleakClient(
-            self.WALLBOX_ADDRESS,
-            disconnected_callback=self._on_disconnected,
-            timeout=self.BLEAK_CONNECT_TIMEOUT_SEC,
-        )
+        self._client = self._new_client()
         self._queue = queue
         self._lock = asyncio.Lock()
         self._state_lock = asyncio.Lock()
@@ -280,11 +276,19 @@ class EasyWallbox:
         self._next_connect_at = time.monotonic()
         await self._set_state(self.BLE_STATE_DISCONNECTED)
 
+    def _new_client(self):
+        return BleakClient(
+            self.WALLBOX_ADDRESS,
+            disconnected_callback=self._on_disconnected,
+            timeout=self.BLEAK_CONNECT_TIMEOUT_SEC,
+        )
+
     def _on_disconnected(self, client):
         # bleak calls this from the event loop, for our own disconnect() too.
         # A drop during connect() surfaces there as an error or auth timeout.
         if (
-            self._resetting
+            client is not self._client
+            or self._resetting
             or self._connecting
             or self._state in (self.BLE_STATE_DISCONNECTED, self.BLE_STATE_TERMINATING)
         ):
@@ -475,6 +479,13 @@ class EasyWallbox:
         self._connecting = True
         try:
             await self._set_state(self.BLE_STATE_CONNECTING)
+            if not self.is_demo() and self._client.is_connected:
+                # bleak resets its connection state only when Disconnect
+                # succeeds, so a failed disconnect leaves the client claiming
+                # a connection, and every connect() after it raises "Client
+                # is already connected".
+                log.warning("bleak still reports a connection, using a new client")
+                self._client = self._new_client()
             log.debug("Connecting BLE...")
             await asyncio.wait_for(self._connect_and_auth(), self.CONNECT_TIMEOUT_SEC)
         except aiomqtt.MqttError:
