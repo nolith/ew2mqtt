@@ -724,7 +724,6 @@ class EasyWallbox:
             self._notification_buffer_st = ""
 
 
-# Jun 12 20:05:53 ew2mqtt easywallbox-mqtt[98318]: 2025-06-12 20:05:53,411 MainThread      INFO     easywallbox    :172      _notification RX received: $BLE,LOGOUT$DATA,OK
 async def main():
     mqtt_host = os.getenv("MQTT_HOST", "192.168.2.70")
     mqtt_port = int(os.getenv("MQTT_PORT", 1883))
