@@ -110,6 +110,31 @@ pkgs.testers.runNixOSTest {
         )
         machine.fail("journalctl -u ew2mqtt.service | grep AccessDenied")
 
+    with subtest("bridge answers BlueZ's passkey request for the wallbox only"):
+        machine.wait_until_succeeds(
+            "journalctl -u ew2mqtt.service | grep 'BlueZ pairing agent registered'"
+        )
+        pid = machine.succeed("systemctl show -P MainPID ew2mqtt.service").strip()
+        names = machine.succeed(
+            f"busctl --no-legend list --unique | awk '$2 == {pid} {{print $1}}'"
+        ).split()
+
+        def request_passkey(device):
+            # BlueZ runs as root, whose D-Bus policy may call agents
+            return [
+                machine.execute(
+                    f"busctl call {name} /ew2mqtt/agent org.bluez.Agent1"
+                    f" RequestPasskey o /org/bluez/hci0/{device} 2>&1"
+                )
+                for name in names
+            ]
+
+        replies = request_passkey("dev_00_11_22_33_44_55")
+        assert (0, "u 1234\n") in replies, replies
+        replies = request_passkey("dev_AA_BB_CC_DD_EE_FF")
+        assert any("Not the wallbox" in out for _, out in replies), replies
+        assert all(status != 0 for status, _ in replies), replies
+
     with subtest("failed reconnects restart BlueZ and the bridge"):
         machine.wait_until_succeeds(
             "systemctl show -P StatusText ew2mqtt.service"
