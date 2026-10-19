@@ -125,11 +125,11 @@ drawing current, which the journal never captured.
   2026-10-15 13:44, session 268) go from charging at about 21 A straight to
   an 11.9 V pilot within one poll, with field 18 (error) going to `1` and
   field 5 to `1` for one frame. Field observation: matches the wallbox LED
-  turning red when the car is unplugged while charging. Field observation,
-  unverified: unplugging during a charge possibly logs alarm code `27`
-  (ground disconnected); the alarm log records of sessions 251 and 268 would
-  settle it. Other causes are expected from the wallbox's self-diagnostics,
-  such as alarm codes `26` and `30` below; none has been observed.
+  turning red when the car is unplugged while charging. Field observation:
+  unplugging during a charge logs alarm code `27`, shown as "GND
+  disconnected" in the Android app. Other causes are expected from the
+  wallbox's self-diagnostics, such as alarm codes `26` and `30` below; none
+  has been observed.
 
 The pilot levels and the duty-cycle rule (current = duty × 0.6 between 10 %
 and 85 %) are the standard EV charging signal, see
@@ -153,8 +153,10 @@ Field observations, not yet checked by data analysis.
   user limit), position 25 is `178` (the DPM switch).
 - `$EEP,READ,MF` returns manufacturing data; it contains `2022,2,25`.
 - `$DATA,READ,HS` and `$DATA,READ,SV` exist; their replies are not decoded.
-- Alarm log: 32 records of (index, session, code). Codes seen: `26` DPM sensor
-  fault, `27` ground disconnected, `30` vehicle not ready.
+- Alarm log: 32 records of (index, session, code). Codes seen, with the
+  error names the Android app shows: `26` DPM sensor fault, `27` GND
+  disconnected (an unplug during a charge, see state `12`), `30` vehicle not
+  ready.
 - Session log: 16 records of (index, session, error, energy in 0.1 kWh,
   charging minutes, connected minutes).
 
