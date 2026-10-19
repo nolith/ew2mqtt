@@ -38,7 +38,8 @@ then one summary every `OUTAGE_LOG_INTERVAL_SEC` (10 minutes). Commands queued
 while the wallbox is disconnected are dropped instead of being replayed later,
 except the held EEPROM settings: `EasyWallbox.hold()` keeps evcc's last
 settings, which are written again after every login and confirmed from the
-write echoes and the app data.
+write echoes and the app data. Until evcc's first command the bridge holds
+the charge, `EasyWallbox.CHARGE_HELD`, as evcc's enable `false` does.
 
 ## Components
 

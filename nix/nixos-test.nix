@@ -159,10 +159,11 @@ pkgs.testers.runNixOSTest {
         machine.systemctl("stop ew2mqtt.service")
         machine.fail("systemctl is-failed ew2mqtt.service")
 
-    def wrote(index, value):
+    def wrote(index, value, since=""):
         # demo mode logs each write as bytearray(b'$EEP,WRITE,IDX,...\\n')
+        match = f"_SYSTEMD_INVOCATION_ID={since}" if since else ""
         standalone.wait_until_succeeds(
-            "journalctl -u ew2mqtt.service | grep -F 'ble write'"
+            f"journalctl -u ew2mqtt.service {match} | grep -F 'ble write'"
             f" | grep -F 'WRITE,IDX,{index},{value}\\n'"
         )
 
@@ -202,5 +203,24 @@ pkgs.testers.runNixOSTest {
         wrote(158, 10)
         publish("evcc/enable", "true")
         wrote(178, 0)
+
+    with subtest("bridge holds the charge at startup until evcc enables it"):
+        # the wallbox keeps the standalone settings over the restart
+        standalone.succeed(
+            "mkdir -p /run/systemd/system/ew2mqtt.service.d",
+            "printf '[Service]\\nEnvironment=STANDALONE=false\\n'"
+            " > /run/systemd/system/ew2mqtt.service.d/evcc.conf",
+            "systemctl daemon-reload",
+        )
+        standalone.systemctl("restart ew2mqtt.service")
+        standalone.wait_for_unit("ew2mqtt.service")
+        bridge = standalone.succeed(
+            "systemctl show -P InvocationID ew2mqtt.service"
+        ).strip()
+        state("enabled", "false")
+        wrote(178, 1, since=bridge)
+        wrote(158, 10, since=bridge)
+        publish("evcc/enable", "true")
+        wrote(178, 0, since=bridge)
   '';
 }

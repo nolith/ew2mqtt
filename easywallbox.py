@@ -162,6 +162,8 @@ class EasyWallbox:
     LOGOUT_TIMEOUT_SEC = 3
     # Rewrites of a held setting the wallbox answers with another value
     HELD_REWRITES = 2
+    # DPM on with a 1 A DPM limit: DPM lets no charge start
+    CHARGE_HELD = {commands.IDX_DPM_STATUS: "1", commands.IDX_DPM_LIMIT: "10"}
 
     def __init__(self, queue, mqtt_client, standalone=None, pairing=None):
         # bluez_pairing.Pairing on Linux, None where BlueZ is not used
@@ -196,6 +198,12 @@ class EasyWallbox:
         self.standalone = standalone or Standalone()
         if self.standalone.enabled:
             self._held = self.standalone.held()
+        else:
+            # evcc's commands are not retained, so the bridge cannot know
+            # what evcc wants until its next command, and reports the charge
+            # disabled; make the wallbox match, it may still hold standalone
+            # settings.
+            self._held = dict(self.CHARGE_HELD)
 
     def is_demo(self):
         return self.WALLBOX_ADDRESS == "demo"
@@ -560,8 +568,8 @@ class EasyWallbox:
         """Keep the wallbox from charging until evcc enables it."""
         # this is very tricky - I could not find a way to disable/pause a charge process
         # so the only way is set the limit to 1A so that the DPM will not allow the charge to start
-        await self.hold(commands.IDX_DPM_STATUS, 1)
-        await self.hold(commands.IDX_DPM_LIMIT, 10)
+        for index, value in self.CHARGE_HELD.items():
+            await self.hold(index, value)
 
     async def hold(self, index, value):
         """Keep an EEPROM index at value.
