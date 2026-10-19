@@ -440,12 +440,17 @@ class EasyWallbox:
         if self.is_demo():
             return
 
+        # On BlueZ, bleak 3.0 subscribes with StartNotify, as some devices
+        # misbehave with AcquireNotify, while 2.1 still prefers AcquireNotify
+        # where the characteristic offers it. Ask for StartNotify so the
+        # wallbox sees the same subscription whichever bleak is installed.
+        notify_args = {"use_start_notify": True}
         await self._client.start_notify(
-            self.WALLBOX_TX, self._notification_handler_rx
+            self.WALLBOX_TX, self._notification_handler_rx, bluez=notify_args
         )  # TX NOTIFY
         log.info("TX NOTIFY STARTED")
         await self._client.start_notify(
-            self.WALLBOX_ST, self._notification_handler_st
+            self.WALLBOX_ST, self._notification_handler_st, bluez=notify_args
         )  # ST NOTIFY (CANAL BUSMODE)
         log.info("ST NOTIFY STARTED")
 
