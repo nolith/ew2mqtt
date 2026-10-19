@@ -322,8 +322,11 @@ state at startup; this topic changes it at runtime, until the next restart:
 | `easywallbox/standalone` | `user/off` | Leave the user limit as it is                       |
 
 Turning it on, or changing a limit while it is on, writes the settings at once
-when logged in, as after a login. Turning it off leaves the
-wallbox as it is until evcc's next command.
+when logged in, as after a login. Turning it off holds the charge as
+`easywallbox/evcc/enable` `false` does, DPM on with a 1 A DPM limit, until
+evcc's next `easywallbox/evcc/enable` command: the wallbox would otherwise keep
+charging on the standalone settings while `easywallbox/evcc/enabled` tells evcc
+that it is disabled.
 
 While it is on, the `easywallbox/evcc/enable`, `easywallbox/evcc/maxcurrent`
 and `easywallbox/evcc/maxcurrentmillis` commands are ignored; the status

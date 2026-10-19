@@ -549,10 +549,14 @@ class EasyWallbox:
             self._held.pop(commands.IDX_DPM_LIMIT, None)
             await self.hold(commands.IDX_DPM_STATUS, 0)
         else:
-            # this is very tricky - I could not find a way to disable/pause a charge process
-            # so the only way is set the limit to 1A so that the DPM will not allow the charge to start
-            await self.hold(commands.IDX_DPM_STATUS, 1)
-            await self.hold(commands.IDX_DPM_LIMIT, 10)
+            await self.hold_charge()
+
+    async def hold_charge(self):
+        """Keep the wallbox from charging until evcc enables it."""
+        # this is very tricky - I could not find a way to disable/pause a charge process
+        # so the only way is set the limit to 1A so that the DPM will not allow the charge to start
+        await self.hold(commands.IDX_DPM_STATUS, 1)
+        await self.hold(commands.IDX_DPM_LIMIT, 10)
 
     async def hold(self, index, value):
         """Keep an EEPROM index at value.
@@ -617,10 +621,13 @@ class EasyWallbox:
             if await self.state() == self.BLE_STATE_CONNECTED_AUTH:
                 await self._apply_held()
         elif was_enabled:
-            # The wallbox keeps the standalone settings until evcc's next
-            # command replaces them.
-            log.info("Standalone mode off: evcc controls the wallbox again")
+            # The wallbox would charge on its standalone settings while the
+            # bridge tells evcc it is disabled, and evcc, content with that,
+            # would never correct it: hold the charge as evcc_enable(False)
+            # does, until evcc's next command replaces it.
+            log.info("Standalone mode off: holding the charge until evcc enables it")
             self._held = {}
+            await self.hold_charge()
         await self.publish_standalone()
 
     async def publish_standalone(self):

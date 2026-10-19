@@ -198,6 +198,8 @@ pkgs.testers.runNixOSTest {
         wrote(158, 250)
         publish("standalone", "off")
         state("enabled", "false")
+        # the charge stays held until evcc enables it
+        wrote(158, 10)
         publish("evcc/enable", "true")
         wrote(178, 0)
   '';
