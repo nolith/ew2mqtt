@@ -281,7 +281,12 @@ are the exception.
 
 The bridge holds the settings from the last evcc command: it writes them again
 after every BLE login, so a command that arrived while the wallbox was
-unreachable, or a write lost with the link, still reaches it. The wallbox
+unreachable, or a write lost with the link, still reaches it. Until evcc's
+first command, outside standalone mode, it holds the charge as
+`easywallbox/evcc/enable` `false` does: evcc's commands are not retained, so
+after a restart the bridge cannot know what evcc wants, and the wallbox may
+still have the settings of standalone mode. evcc enables the charge again when
+it wants it, as `easywallbox/evcc/enabled` reports `false`. The wallbox
 echoes every write, and its app data carries the DPM switch (field 6) and the
 user limit (field 10): the bridge writes again a setting either shows with
 another value. Only the echo confirms the DPM limit.
