@@ -1,5 +1,4 @@
 # Run the bridge as a systemd service next to BlueZ
-{ self }:
 {
   config,
   lib,
@@ -15,8 +14,10 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      defaultText = lib.literalExpression "ew2mqtt.packages.\${pkgs.stdenv.hostPlatform.system}.default";
+      # Built from the host's nixpkgs, not the flake's own: a second
+      # nixpkgs would bring its own Python and glibc onto the host.
+      default = pkgs.callPackage ./package.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage \"\${ew2mqtt}/nix/package.nix\" { }";
       description = "The ew2mqtt package to run.";
     };
 

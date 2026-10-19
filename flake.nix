@@ -18,7 +18,7 @@
       ];
 
       flake.nixosModules = rec {
-        ew2mqtt = import ./nix/nixos-module.nix { inherit (inputs) self; };
+        ew2mqtt = ./nix/nixos-module.nix;
         default = ew2mqtt;
       };
 
@@ -29,26 +29,7 @@
           ...
         }:
         let
-          pythonPackages = pkgs.python3Packages;
-          propagatedBuildInputs = with pythonPackages; [
-            aiomqtt
-            bleak
-          ];
-
-          ew2mqtt = pythonPackages.buildPythonApplication {
-            inherit propagatedBuildInputs;
-
-            pname = "ew2mqtt";
-            version = "0.1.0";
-            src = ./.;
-            pyproject = true;
-
-            build-system = [
-              pythonPackages.setuptools
-            ];
-
-            doCheck = false;
-          };
+          ew2mqtt = pkgs.callPackage ./nix/package.nix { };
 
           treefmt = pkgs.treefmt.withConfig {
             configFile = ./treefmt.toml;
@@ -76,7 +57,7 @@
           };
 
           devShells.default = pkgs.mkShellNoCC {
-            inherit propagatedBuildInputs;
+            inherit (ew2mqtt) propagatedBuildInputs;
 
             packages = [ treefmt ];
 
