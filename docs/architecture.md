@@ -82,7 +82,8 @@ All topics are prefixed with `WALLBOX_TOPIC` (default: `easywallbox`):
 ### Standalone Mode
 - `easywallbox/standalone` - on/off, `dpm/<A>`, `user/<A>`, `user/off`; evcc
   commands are ignored while on, and `Standalone.held()` is written after
-  every login
+  every login; off holds the charge, as evcc's enable `false`, until evcc's
+  next enable command
 - `easywallbox/standalone/{enabled,dpm_limit,user_limit}` - Retained state
 
 ## Error Handling and Exit Codes
